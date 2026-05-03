@@ -1,0 +1,9 @@
+v0.2.0: add background daemon mode (start/stop/status)
+
+- `aiem start` launches server as background daemon (detached process)
+- `aiem stop` gracefully stops the daemon via PID file
+- `aiem status` checks if daemon is running
+- `aiem` without subcommand runs in foreground (Ctrl+C to stop)
+- PID file and log stored in ~/.aiem/
+- Fix MCP registry to handle flat JSON format from Rust version
+- Fix Skills registry to handle git-hub source type normalization

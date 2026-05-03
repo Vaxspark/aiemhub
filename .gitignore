@@ -14,3 +14,9 @@ Thumbs.db
 *.swo
 .env
 .env.local
+
+# npm pack output
+*.tgz
+
+# aiem runtime
+*.pid
