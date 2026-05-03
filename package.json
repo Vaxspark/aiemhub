@@ -1,0 +1,54 @@
+{
+  "name": "aiemhub",
+  "version": "0.1.0",
+  "description": "AI Extension Manager — manage Skills, MCP servers, project profiles, secrets, and backups via Web UI",
+  "type": "module",
+  "bin": {
+    "aiem": "./dist/cli.js"
+  },
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "prepublishOnly": "tsc",
+    "start": "node dist/index.js"
+  },
+  "keywords": [
+    "aiem",
+    "mcp",
+    "skills",
+    "ai",
+    "cursor",
+    "claude-code",
+    "codex",
+    "windsurf",
+    "copilot",
+    "extensions",
+    "manager"
+  ],
+  "author": "Vaxspark",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Vaxspark/aiemhub.git"
+  },
+  "homepage": "https://github.com/Vaxspark/aiemhub#readme",
+  "bugs": {
+    "url": "https://github.com/Vaxspark/aiemhub/issues"
+  },
+  "dependencies": {
+    "express": "^5.1.0",
+    "keytar": "^7.9.0"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.0",
+    "@types/node": "^22.0.0",
+    "typescript": "^5.7.0"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ]
+}

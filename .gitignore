@@ -1,0 +1,16 @@
+node_modules/
+dist/
+*.js.map
+*.d.ts
+
+.DS_Store
+.vscode/
+.idea/
+*.log
+
+# OS / editor
+Thumbs.db
+*.swp
+*.swo
+.env
+.env.local
