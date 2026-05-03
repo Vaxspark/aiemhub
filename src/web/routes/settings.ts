@@ -2,7 +2,7 @@ import { Router } from "express";
 import * as os from "os";
 import * as fs from "fs";
 import { Vault } from "../../core/secrets.js";
-import { loadBackupConfig, saveBackupConfig, timeAgo, snapshotLocal, exportToDir, importFromDir, loadBackupTokenFile, saveBackupTokenFile, type BackupConfig } from "../../core/backup.js";
+import { loadBackupConfig, saveBackupConfig, timeAgo, snapshotLocal, exportToDir, importFromDir, loadBackupTokenFile, saveBackupTokenFile, pushGithub, pullGithub, type BackupConfig } from "../../core/backup.js";
 import * as paths from "../../core/paths.js";
 import { removePath } from "../../core/fs-util.js";
 import { page, pageHeader, btnPrimary, btnDanger, tag, esc } from "../layout.js";
@@ -107,13 +107,33 @@ export function settingsRouter(st: AppState): Router {
     res.send("ok");
   });
 
-  router.post("/settings/backup/push", (req, res) => {
-    toastInfo(st, "GitHub push not yet implemented in TS build");
+  router.post("/settings/backup/push", async (req, res) => {
+    const id = await st.nextTaskId();
+    taskStarted(st, id, "Pushing to GitHub...");
+    try {
+      const cfg = loadBackupConfig();
+      const repo = cfg.github_repo;
+      if (!repo) throw new Error("No GitHub repo configured");
+      const token = loadBackupTokenFile() || process.env.GITHUB_TOKEN;
+      pushGithub(repo, token || undefined);
+      taskFinished(st, id, true, "Pushed to GitHub successfully");
+      invalidate(st, "skills"); invalidate(st, "mcp");
+    } catch (e: any) { taskFinished(st, id, false, `Push failed: ${e.message}`); }
     res.send("ok");
   });
 
-  router.post("/settings/backup/pull", (req, res) => {
-    toastInfo(st, "GitHub pull not yet implemented in TS build");
+  router.post("/settings/backup/pull", async (req, res) => {
+    const id = await st.nextTaskId();
+    taskStarted(st, id, "Pulling from GitHub...");
+    try {
+      const cfg = loadBackupConfig();
+      const repo = cfg.github_repo;
+      if (!repo) throw new Error("No GitHub repo configured");
+      const token = loadBackupTokenFile() || process.env.GITHUB_TOKEN;
+      pullGithub(repo, token || undefined);
+      taskFinished(st, id, true, "Pulled from GitHub and restored");
+      invalidate(st, "skills"); invalidate(st, "mcp"); invalidate(st, "projects");
+    } catch (e: any) { taskFinished(st, id, false, `Pull failed: ${e.message}`); }
     res.send("ok");
   });
 

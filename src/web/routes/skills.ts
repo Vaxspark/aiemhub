@@ -1,11 +1,16 @@
 import { Router, Request, Response } from "express";
+import * as fs from "fs";
 import { IDES, findIde } from "../../core/ide.js";
-import { SkillRegistry, type Skill, type SkillSource, parseGithubSource, applyGithubProxyEnv, createLocalSkill, deploySkill, undeploySkill, undeployAllGlobal, removeSkill, readSkillContent, listSkillFiles } from "../../core/skills.js";
+import { SkillRegistry, type Skill, type SkillSource, parseGithubSource, applyGithubProxyEnv, canonicalId, createLocalSkill, deploySkill, undeploySkill, undeployAllGlobal, removeSkill, readSkillContent, listSkillFiles } from "../../core/skills.js";
+import { McpRegistry } from "../../core/mcp.js";
 import { ProjectStore } from "../../core/projects.js";
 import { page, pageHeader, btnPrimary, btnSecondary, btnDanger, emptyState, tag, type TagKind, esc, ideOptions, settingsGroup } from "../layout.js";
 import type { AppState } from "../state.js";
 import { toastInfo, toastError, invalidate, taskStarted, taskFinished } from "../tasks.js";
 import * as path from "path";
+import * as paths from "../../core/paths.js";
+import { hashDir } from "../../core/fs-util.js";
+import { parseGithubInput, previewSkillsFromGithub, copyDirRecursive, type SkillsGithubPreview } from "../../core/github.js";
 
 export function skillsRouter(st: AppState): Router {
   const router = Router();
@@ -44,15 +49,59 @@ export function skillsRouter(st: AppState): Router {
     res.send(renderList(tryLoad(() => st.skills()), tryLoad(() => ProjectStore.load()), q));
   });
 
-  router.post("/skills/add", async (req, res) => {
-    let source = (req.body.source || "").trim();
-    if (!source) { toastError(st, "source is required"); return res.status(400).send("empty"); }
-    const sub = (req.body.subdir || "").trim();
-    if (sub && !source.includes("//")) source += `//${sub}`;
-    const ref = (req.body.reference || "").trim();
-    if (ref && !source.includes("@")) source += `@${ref}`;
-    toastInfo(st, `add ${source} — GitHub fetch not yet implemented in TS build`);
-    res.status(202).send("ok");
+  router.post("/skills/github-preview", async (req, res) => {
+    try {
+      const source = applyGithubProxyEnv((req.body.source || "").trim());
+      const subdirInput = (req.body.subdir || "").trim() || undefined;
+      const refInput = (req.body.reference || "").trim() || undefined;
+      if (!source) throw new Error("Source is required");
+      const parsed = parseGithubInput(source);
+      if (!parsed) throw new Error("Expected format: owner/repo or GitHub URL");
+      const preview = await previewSkillsFromGithub(parsed.owner, parsed.repo, refInput || parsed.ref, subdirInput || parsed.subdir);
+      res.send(renderSkillsPreview(preview));
+    } catch (e: any) {
+      res.send(`<div style="color:var(--danger);padding:8px;font-size:var(--font-xs)">\u2717 ${esc(e.message)}</div>`);
+    }
+  });
+
+  router.post("/skills/github-confirm", async (req, res) => {
+    try {
+      const data = JSON.parse(req.body.preview_data || "{}");
+      const { owner, repo, ref, sha, tempDir, topDir, skills: previewSkills, mcpServers } = data as SkillsGithubPreview;
+      if (!previewSkills || previewSkills.length === 0 && (!mcpServers || mcpServers.length === 0)) throw new Error("Nothing to install");
+      const reg = SkillRegistry.load();
+      let installed = 0;
+      for (const entry of previewSkills) {
+        const srcDir = entry.subdir ? path.join(topDir, entry.subdir) : topDir;
+        if (!fs.existsSync(srcDir)) continue;
+        const source: SkillSource = { type: "github", owner, repo, ref, subdir: entry.subdir || undefined };
+        const id = canonicalId(source);
+        const destDir = path.join(paths.skillsDir(), id);
+        fs.mkdirSync(destDir, { recursive: true });
+        copyDirRecursive(srcDir, destDir);
+        const skillMd = path.join(destDir, "SKILL.md");
+        let description: string | undefined;
+        try { description = fs.readFileSync(skillMd, "utf-8").split("\n").find((l) => l.trim())?.replace(/^#+\s*/, ""); } catch {}
+        const skill: Skill = {
+          id, name: entry.name, source, version: sha || new Date().toISOString(),
+          path: destDir, description, installed_at: new Date().toISOString(),
+          deployments: {}, file_hashes: hashDir(destDir),
+        };
+        reg.upsert(skill);
+        installed++;
+      }
+      reg.save();
+      if (mcpServers && mcpServers.length > 0 && req.body.import_mcp === "on") {
+        const mcpReg = McpRegistry.load();
+        for (const s of mcpServers) mcpReg.upsert(s);
+        mcpReg.save();
+        invalidate(st, "mcp");
+      }
+      try { fs.rmSync(tempDir, { recursive: true, force: true }); } catch {}
+      toastInfo(st, `installed ${installed} skill(s) from ${owner}/${repo}`);
+      invalidate(st, "skills");
+    } catch (e: any) { toastError(st, e.message); }
+    res.send("ok");
   });
 
   router.post("/skills/create", async (req, res) => {
@@ -237,13 +286,13 @@ function addForm(): string {
   return `<div class="group-panel" style="margin-bottom:16px"><div style="padding:16px">
     <div style="font-size:14px;font-weight:600;margin-bottom:4px">Add skill from GitHub</div>
     <div class="meta" style="margin-bottom:12px">owner/repo \u00b7 owner/repo//subdir \u00b7 owner/repo@v1.2 \u00b7 or a full GitHub URL</div>
-    <form hx-post="/skills/add" hx-swap="none" hx-on--after-request="this.reset();document.getElementById('add-skill').setAttribute('hidden','')" class="grid gap-3" style="grid-template-columns:1fr 1fr">
+    <form hx-post="/skills/github-preview" hx-swap="innerHTML" hx-target="#skills-github-result" class="grid gap-3" style="grid-template-columns:1fr 1fr">
       <div style="grid-column:1/-1"><label class="label">Source *</label><input name="source" required class="field" placeholder="owner/repo or https://github.com/owner/repo"></div>
       <div><label class="label">Subdir (optional)</label><input name="subdir" class="field" placeholder="path/inside/repo"></div>
       <div><label class="label">Ref (optional)</label><input name="reference" class="field" placeholder="branch / tag / commit"></div>
-      <div><label class="label">Display name (optional)</label><input name="name" class="field" placeholder="auto"></div>
-      <div class="flex items-end gap-2">${btnPrimary("Download & install")}<button type="button" class="btn-ghost" onclick="document.getElementById('add-skill').setAttribute('hidden','')">Cancel</button></div>
+      <div class="flex items-end gap-2"><button type="submit" class="btn-primary">Fetch & preview</button><button type="button" class="btn-ghost" onclick="document.getElementById('add-skill').setAttribute('hidden','')">Cancel</button></div>
     </form>
+    <div id="skills-github-result" style="margin-top:8px"></div>
   </div></div>`;
 }
 
@@ -392,4 +441,50 @@ function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function renderSkillsPreview(preview: SkillsGithubPreview): string {
+  const { owner, repo, ref, skills, mcpServers } = preview;
+  const previewData = JSON.stringify(preview);
+  const skillRows = skills.map((s) => `<tr>
+    <td style="font-weight:500">${esc(s.name)}</td>
+    <td class="mono meta">${esc(s.subdir || "/")}</td>
+    <td class="meta" style="max-width:250px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(s.description)}</td>
+    <td style="text-align:right">${s.fileCount} files</td>
+  </tr>`).join("");
+  const mcpRows = mcpServers.map((s) => {
+    const t = s.transport;
+    const detail = t.type === "stdio" ? `${t.command} ${t.args.join(" ")}` : (t as any).url;
+    return `<tr>
+      <td style="font-weight:500">${esc(s.name)}</td>
+      <td>${tag(t.type, "neutral")}</td>
+      <td class="mono meta" style="max-width:250px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(detail)}</td>
+    </tr>`;
+  }).join("");
+  return `<div class="group-panel" style="padding:12px;margin-top:8px">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+      <span style="color:var(--success);font-weight:600">\u2713 Preview: ${esc(owner)}/${esc(repo)}@${esc(ref)}</span>
+    </div>
+    ${skills.length > 0 ? `<div style="margin-bottom:12px">
+      <div style="font-size:13px;font-weight:600;margin-bottom:4px">Detected skills (${skills.length})</div>
+      <table class="aiem"><thead><tr><th>Name</th><th>Subdir</th><th>Description</th><th style="text-align:right">Files</th></tr></thead>
+      <tbody>${skillRows}</tbody></table>
+    </div>` : ""}
+    ${mcpServers.length > 0 ? `<div style="margin-bottom:12px">
+      <div style="font-size:13px;font-weight:600;margin-bottom:4px">Detected MCP servers (${mcpServers.length})</div>
+      <table class="aiem"><thead><tr><th>Name</th><th>Transport</th><th>Command / URL</th></tr></thead>
+      <tbody>${mcpRows}</tbody></table>
+      <label style="display:flex;align-items:center;gap:6px;margin-top:6px;font-size:var(--font-xs)">
+        <input type="checkbox" name="import_mcp" form="skills-confirm-form" checked> Also import MCP servers
+      </label>
+    </div>` : ""}
+    ${skills.length === 0 && mcpServers.length === 0 ? `<div class="meta">No skills or MCP servers detected.</div>` : ""}
+    <form id="skills-confirm-form" hx-post="/skills/github-confirm" hx-swap="none" hx-on--after-request="document.getElementById('skills-github-result').innerHTML='<span style=\\'color:var(--success)\\'>Installed!</span>'">
+      <input type="hidden" name="preview_data" value='${esc(previewData)}'>
+      <div style="display:flex;gap:8px;align-items:center">
+        ${btnPrimary("Confirm install")}
+        <button type="button" class="btn-ghost" onclick="document.getElementById('skills-github-result').innerHTML=''">Cancel</button>
+      </div>
+    </form>
+  </div>`;
 }
