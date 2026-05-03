@@ -5,12 +5,12 @@ import { Vault } from "../../core/secrets.js";
 import { loadBackupConfig, saveBackupConfig, timeAgo, snapshotLocal, exportToDir, importFromDir, loadBackupTokenFile, saveBackupTokenFile, type BackupConfig } from "../../core/backup.js";
 import * as paths from "../../core/paths.js";
 import { removePath } from "../../core/fs-util.js";
-import { page, pageHeader, btnPrimary, btnDanger, settingsGroup, settingsRow, tag, card, emptyState, esc } from "../layout.js";
+import { page, pageHeader, btnPrimary, btnDanger, tag, esc } from "../layout.js";
 import type { AppState } from "../state.js";
 import { toastInfo, toastError, invalidate, taskStarted, taskFinished } from "../tasks.js";
 
 const GH_TOKEN_NAME = "github_token";
-const VERSION = "0.1.0";
+const VERSION = "0.2.0";
 
 export function settingsRouter(st: AppState): Router {
   const router = Router();
@@ -22,36 +22,16 @@ export function settingsRouter(st: AppState): Router {
     const lastBackup = backupCfg.last_backup_ts ? timeAgo(backupCfg.last_backup_ts) : "never";
     res.send(page("Settings", "/settings", `
       ${pageHeader("Settings", "", "")}
-      <div class="content-padding wide-content">
-        ${settingsGroup("GitHub Token", `
-          ${settingsRow("Personal Access Token", "Stored in the OS keyring. Avoids 60-req/h anonymous rate limit.",
-            hasToken ? tag("configured", "success") : `<span class="meta">not set</span>`
-          )}
-          <div style="padding:12px 16px;border-top:1px solid var(--stroke-light)">
-            <form hx-post="/settings/github-token" hx-swap="none" class="flex gap-2 items-end">
-              <input name="token" type="password" placeholder="ghp_..." required class="field" style="flex:1">
-              ${btnPrimary("Save")}
-            </form>
-            <form hx-post="/settings/github-token/clear" hx-swap="none" hx-confirm="Clear stored token?" style="margin-top:8px">${btnDanger("Clear")}</form>
-          </div>
-        `)}
-        ${backupCard(backupCfg, lastBackup)}
-        ${settingsGroup("Host Info", `
-          ${settingsRow("AIEM_HOME", "", `<span class="mono">${esc(String(aiemHome))}</span>`)}
-          ${settingsRow("Hostname", "", `<span class="mono">${esc(os.hostname())}</span>`)}
-          ${settingsRow("User", "", `<span class="mono">${esc(os.userInfo().username)}</span>`)}
-          ${settingsRow("OS", "", `<span class="mono">${esc(process.platform)} / ${esc(process.arch)}</span>`)}
-        `)}
-        ${settingsGroup("Trash", `
-          ${settingsRow("Removed content", "Items are moved to a local trash folder instead of being hard-deleted.",
-            `<a href="/settings/trash" class="btn-secondary" style="text-decoration:none">Open trash</a>`
-          )}
-        `)}
-        ${settingsGroup("About", `
-          ${settingsRow("Version", "aiem-web \u2014 headless management for skills & MCP across IDEs (TypeScript build).",
-            `<span class="mono">${VERSION}</span>`
-          )}
-        `)}
+      <div class="content-padding wide-content settings-grid">
+        <div class="settings-col">
+          ${ghTokenCard(hasToken)}
+          ${backupCard(backupCfg, lastBackup)}
+        </div>
+        <div class="settings-col">
+          ${hostInfoCard(aiemHome)}
+          ${trashCard()}
+          ${aboutCard()}
+        </div>
       </div>
     `));
   });
@@ -144,21 +124,52 @@ export function settingsRouter(st: AppState): Router {
     res.redirect("/settings");
   });
 
+  router.post("/settings/verify-repo", async (req, res) => {
+    try {
+      const repo = (req.body.repo || "").trim();
+      const token = (req.body.token || "").trim() || loadBackupTokenFile() || process.env.GITHUB_TOKEN;
+      if (!repo) throw new Error("Repo URL is required");
+      const url = repo.replace(/\/+$/, "");
+      const match = url.match(/github\.com\/([^/]+)\/([^/]+)/);
+      if (!match) throw new Error("Only GitHub HTTPS URLs are supported");
+      const [, owner, repoName] = match;
+      const apiUrl = `https://api.github.com/repos/${owner}/${repoName.replace(/\.git$/, "")}`;
+      const headers: Record<string, string> = { "Accept": "application/vnd.github+json", "User-Agent": "aiemhub" };
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+      const resp = await fetch(apiUrl, { headers });
+      if (resp.ok) {
+        const data = await resp.json() as any;
+        const vis = data.private ? "private" : "public";
+        res.send(`<span style="color:var(--success);font-size:var(--font-xs);font-weight:500">\u2713 Connected (${vis}, ${data.default_branch || "main"})</span>`);
+      } else if (resp.status === 404) {
+        res.send(`<span style="color:var(--danger);font-size:var(--font-xs);font-weight:500">\u2717 Not found (check URL or token)</span>`);
+      } else if (resp.status === 401 || resp.status === 403) {
+        res.send(`<span style="color:var(--danger);font-size:var(--font-xs);font-weight:500">\u2717 Auth failed (${resp.status})</span>`);
+      } else {
+        res.send(`<span style="color:var(--warning);font-size:var(--font-xs);font-weight:500">\u2717 HTTP ${resp.status}</span>`);
+      }
+    } catch (e: any) {
+      res.send(`<span style="color:var(--danger);font-size:var(--font-xs);font-weight:500">\u2717 ${esc(e.message)}</span>`);
+    }
+  });
+
   router.get("/settings/trash", (req, res) => {
     const entries = listTrashEntries();
     const td = (() => { try { return paths.trashDir(); } catch { return ""; } })();
     const body = `
       ${pageHeader("Trash", "Items removed from aiem's managed content. Delete entries here to reclaim disk space.", "")}
-      ${entries.length === 0 ? emptyState("Trash is empty", `Location: ${td}`) : `
-        <div class="row" style="margin-bottom:12px;gap:8px">
-          <form method="post" action="/settings/trash/empty" hx-post="/settings/trash/empty" hx-swap="none">${btnDanger("Empty trash")}</form>
-          <span class="muted" style="align-self:center">${entries.length} entries \u2022 ${esc(td)}</span>
+      ${entries.length === 0 ? `<div class="empty-state"><div class="empty-state-title">Trash is empty</div><div class="empty-state-sub">${esc(td)}</div></div>` : `
+        <div class="content-padding wide-content">
+          <div style="display:flex;gap:8px;align-items:center;margin-bottom:16px">
+            <form method="post" action="/settings/trash/empty" hx-post="/settings/trash/empty" hx-swap="none">${btnDanger("Empty trash")}</form>
+            <span class="meta">${entries.length} entries \u2022 ${esc(td)}</span>
+          </div>
+          <div class="group-panel"><table class="aiem"><thead><tr><th>Name</th><th>Path</th><th style="text-align:right">Actions</th></tr></thead><tbody>
+            ${entries.map(([name, p]) => `<tr><td><span class="mono" style="font-size:var(--font-xs)">${esc(name)}</span></td><td class="meta" style="font-size:var(--font-xs)">${esc(p)}</td><td style="text-align:right">
+              <form method="post" action="/settings/trash/${encodeURIComponent(name)}/delete" hx-post="/settings/trash/${encodeURIComponent(name)}/delete" hx-swap="none" style="display:inline">${btnDanger("Delete")}</form>
+            </td></tr>`).join("")}
+          </tbody></table></div>
         </div>
-        ${card(`<table class="table" style="width:100%"><thead><tr><th>Name</th><th>Path</th><th>Actions</th></tr></thead><tbody>
-          ${entries.map(([name, p]) => `<tr><td><code>${esc(name)}</code></td><td class="muted" style="font-size:12px">${esc(p)}</td><td>
-            <form method="post" action="/settings/trash/${encodeURIComponent(name)}/delete" hx-post="/settings/trash/${encodeURIComponent(name)}/delete" hx-swap="none" style="display:inline">${btnDanger("Delete")}</form>
-          </td></tr>`).join("")}
-        </tbody></table>`)}
       `}`;
     res.send(page("Trash \u2014 aiem", "/settings", body));
   });
@@ -203,50 +214,148 @@ function listTrashEntries(): [string, string][] {
   } catch { return []; }
 }
 
+function ghTokenCard(hasToken: boolean): string {
+  return `<div class="settings-card">
+    <div class="settings-card-header">
+      <div class="settings-card-icon">&#x1F511;</div>
+      <div>
+        <div class="settings-card-title">GitHub Token</div>
+        <div class="settings-card-desc">Personal access token for GitHub API</div>
+      </div>
+      <div class="settings-card-badge">${hasToken ? tag("configured", "success") : tag("not set", "neutral")}</div>
+    </div>
+    <div class="settings-card-body">
+      <form hx-post="/settings/github-token" hx-swap="none">
+        <div class="settings-form-row">
+          <input name="token" type="password" placeholder="ghp_..." required class="field settings-input-med">
+          ${btnPrimary("Save")}
+        </div>
+      </form>
+      <form hx-post="/settings/github-token/clear" hx-swap="none" hx-confirm="Clear stored token?" style="margin-top:8px">${btnDanger("Clear")}</form>
+    </div>
+  </div>`;
+}
+
 function backupCard(cfg: BackupConfig, lastBackup: string): string {
   const repoVal = cfg.github_repo || "";
   const hasToken = !!(process.env.GITHUB_TOKEN) || !!loadBackupTokenFile();
-  return card(`
-    <div class="flex items-center justify-between mb-3">
-      <div class="text-sm font-semibold">Backup & Restore</div>
-      <span class="meta text-xs">Last backup: ${esc(lastBackup)}</span>
+  return `<div class="settings-card">
+    <div class="settings-card-header">
+      <div class="settings-card-icon">&#x1F4BE;</div>
+      <div>
+        <div class="settings-card-title">Backup & Restore</div>
+        <div class="settings-card-desc">Local snapshots and GitHub sync</div>
+      </div>
+      <div class="settings-card-badge"><span class="meta text-xs">Last: ${esc(lastBackup)}</span></div>
     </div>
-    <div class="mb-4">
-      <p class="meta text-xs mb-2">Auto-backup interval</p>
-      <form hx-post="/settings/backup/interval" hx-swap="none" class="flex gap-2 flex-wrap">
-        ${(["never", "daily", "weekly"] as const).map((val) => {
-          const label = val.charAt(0).toUpperCase() + val.slice(1);
-          const selected = cfg.auto_interval === val;
-          return `<button type="submit" name="interval" value="${val}" class="px-3 py-1 rounded text-xs border ${selected ? "border-[var(--accent)] text-[var(--accent)] font-semibold" : "border-[var(--border)] text-[var(--muted)]"}">${label}</button>`;
-        }).join("")}
-      </form>
-    </div>
-    <hr class="border-[var(--border)] mb-4">
-    <div class="mb-4">
-      <p class="text-xs font-semibold mb-2">Local snapshot</p>
-      <p class="meta text-xs mb-2">Saves skills_index.json, mcp_servers.json, projects.json into <code class="mono">~/.aiem/snapshots/&lt;ts&gt;/</code></p>
-      <form hx-post="/settings/backup/snapshot" hx-swap="none" class="mb-3">${btnPrimary("Snapshot now")}</form>
-      <p class="meta text-xs mb-1">Export to directory</p>
-      <form hx-post="/settings/backup/export" hx-swap="none" class="flex gap-2"><input name="dest" type="text" placeholder="/path/to/export" class="field" style="flex:1">${btnPrimary("Export")}</form>
-      <p class="meta text-xs mb-1 mt-3">Restore from directory</p>
-      <form hx-post="/settings/backup/import" hx-swap="none" hx-confirm="Overwrite current config from this snapshot?" class="flex gap-2"><input name="src" type="text" placeholder="/path/to/snapshot" class="field" style="flex:1">${btnDanger("Restore")}</form>
-    </div>
-    <hr class="border-[var(--border)] mb-4">
-    <div>
-      <p class="text-xs font-semibold mb-2">GitHub backup</p>
-      <form hx-post="/settings/backup/save-config" hx-swap="none" class="mb-3">
-        <p class="meta text-xs mb-1">Repo URL (HTTPS)</p>
-        <input name="repo" type="text" value="${esc(repoVal)}" placeholder="https://github.com/you/my-aiem-backup" class="field w-full mb-2">
-        <p class="meta text-xs mb-1">GitHub Token ${hasToken ? tag("\u25cf saved", "success") : ""}</p>
-        <input name="token" type="password" placeholder="ghp_... (leave blank to keep existing)" class="field w-full mb-2">
-        <p class="meta text-xs mb-1">Proxy (optional)</p>
-        <input name="proxy" type="text" value="${esc(cfg.http_proxy || "")}" placeholder="socks5h://127.0.0.1:1080" class="field w-full mb-2">
-        <div class="flex gap-2">${btnPrimary("Save config")}</div>
-      </form>
-      <div class="flex gap-2">
-        <form hx-post="/settings/backup/push" hx-swap="none">${btnPrimary("Push to GitHub")}</form>
-        <form hx-post="/settings/backup/pull" hx-swap="none" hx-confirm="Restore config from GitHub? This overwrites current data.">${btnDanger("Pull from GitHub")}</form>
+    <div class="settings-card-body">
+      <div class="settings-section">
+        <div class="settings-section-label">Auto-backup interval</div>
+        <form hx-post="/settings/backup/interval" hx-swap="none" style="display:flex;gap:6px">
+          ${(["never", "daily", "weekly"] as const).map((val) => {
+            const label = val.charAt(0).toUpperCase() + val.slice(1);
+            const selected = cfg.auto_interval === val;
+            return `<button type="submit" name="interval" value="${val}" class="${selected ? "btn-primary" : "btn-ghost"}" style="font-size:var(--font-xs);padding:4px 12px">${label}</button>`;
+          }).join("")}
+        </form>
+      </div>
+
+      <div class="settings-section">
+        <div class="settings-section-label">Local snapshot</div>
+        <p class="meta text-xs" style="margin-bottom:8px">Saves registries into <code class="mono">~/.aiem/snapshots/&lt;ts&gt;/</code></p>
+        <form hx-post="/settings/backup/snapshot" hx-swap="none">${btnPrimary("Snapshot now")}</form>
+      </div>
+
+      <div class="settings-section">
+        <div class="settings-section-label">Export / Restore</div>
+        <form hx-post="/settings/backup/export" hx-swap="none">
+          <div class="settings-form-row">
+            <input name="dest" type="text" placeholder="/path/to/export" class="field settings-input-wide">
+            ${btnPrimary("Export")}
+          </div>
+        </form>
+        <form hx-post="/settings/backup/import" hx-swap="none" hx-confirm="Overwrite current config from this snapshot?" style="margin-top:6px">
+          <div class="settings-form-row">
+            <input name="src" type="text" placeholder="/path/to/snapshot" class="field settings-input-wide">
+            ${btnDanger("Restore")}
+          </div>
+        </form>
+      </div>
+
+      <div class="settings-section">
+        <div class="settings-section-label">GitHub backup</div>
+        <form hx-post="/settings/backup/save-config" hx-swap="none">
+          <div class="settings-field-group">
+            <label class="label">Repo URL (HTTPS)</label>
+            <input name="repo" type="text" value="${esc(repoVal)}" placeholder="https://github.com/you/repo" class="field settings-input-wide">
+          </div>
+          <div class="settings-field-group">
+            <label class="label">GitHub Token ${hasToken ? tag("\u25cf saved", "success") : ""}</label>
+            <input name="token" type="password" placeholder="ghp_... (leave blank to keep)" class="field settings-input-wide">
+          </div>
+          <div class="settings-field-group">
+            <label class="label">Proxy (optional)</label>
+            <input name="proxy" type="text" value="${esc(cfg.http_proxy || "")}" placeholder="socks5h://127.0.0.1:1080" class="field settings-input-med">
+          </div>
+          <div style="display:flex;gap:8px;margin-top:8px;align-items:center">
+            ${btnPrimary("Save config")}
+            <button type="button" class="btn-ghost" hx-post="/settings/verify-repo" hx-include="closest form" hx-target="#verify-result" hx-swap="innerHTML" style="font-size:var(--font-xs)">Verify</button>
+            <span id="verify-result" style="display:inline-flex;align-items:center"></span>
+          </div>
+        </form>
+        <div style="display:flex;gap:8px;margin-top:12px;padding-top:12px;border-top:1px solid var(--stroke-light)">
+          <form hx-post="/settings/backup/push" hx-swap="none">${btnPrimary("Push to GitHub")}</form>
+          <form hx-post="/settings/backup/pull" hx-swap="none" hx-confirm="Restore config from GitHub? This overwrites current data.">${btnDanger("Pull from GitHub")}</form>
+        </div>
       </div>
     </div>
-  `);
+  </div>`;
+}
+
+function hostInfoCard(aiemHome: string): string {
+  return `<div class="settings-card">
+    <div class="settings-card-header">
+      <div class="settings-card-icon">&#x1F4BB;</div>
+      <div>
+        <div class="settings-card-title">Host Info</div>
+        <div class="settings-card-desc">Runtime environment details</div>
+      </div>
+    </div>
+    <div class="settings-card-body">
+      <div class="info-grid">
+        <div class="info-item"><span class="info-label">AIEM_HOME</span><span class="mono info-value">${esc(aiemHome)}</span></div>
+        <div class="info-item"><span class="info-label">Hostname</span><span class="mono info-value">${esc(os.hostname())}</span></div>
+        <div class="info-item"><span class="info-label">User</span><span class="mono info-value">${esc(os.userInfo().username)}</span></div>
+        <div class="info-item"><span class="info-label">OS</span><span class="mono info-value">${esc(process.platform)} / ${esc(process.arch)}</span></div>
+      </div>
+    </div>
+  </div>`;
+}
+
+function trashCard(): string {
+  return `<div class="settings-card settings-card-compact">
+    <div class="settings-card-header">
+      <div class="settings-card-icon">&#x1F5D1;</div>
+      <div>
+        <div class="settings-card-title">Trash</div>
+        <div class="settings-card-desc">Removed items are moved to trash, not hard-deleted</div>
+      </div>
+    </div>
+    <div class="settings-card-body">
+      <a href="/settings/trash" class="btn-secondary" style="text-decoration:none">Open trash</a>
+    </div>
+  </div>`;
+}
+
+function aboutCard(): string {
+  return `<div class="settings-card settings-card-compact">
+    <div class="settings-card-header">
+      <div class="settings-card-icon">&#x2139;</div>
+      <div>
+        <div class="settings-card-title">About</div>
+        <div class="settings-card-desc">aiem-web \u2014 headless management for skills & MCP across IDEs</div>
+      </div>
+      <div class="settings-card-badge"><span class="mono" style="font-size:var(--font-sm);font-weight:600">${VERSION}</span></div>
+    </div>
+  </div>`;
 }
