@@ -57,16 +57,21 @@ npx aiemhub
 #### 启动 Web UI
 
 ```bash
-aiem
+aiem                # 前台启动（Ctrl+C 停止）
+aiem start          # 后台守护模式
+aiem stop           # 停止后台服务
+aiem status         # 查看后台服务状态
 ```
 
 浏览器访问 http://127.0.0.1:8787 即可。
+
+使用 `aiem start` 后台启动后，关闭终端也不会影响服务运行。
 
 #### 自定义端口和主机
 
 ```bash
 aiem --port 3000
-aiem --host 0.0.0.0 --port 8080
+aiem start --host 0.0.0.0 --port 8080
 aiem --open            # 启动后自动打开浏览器
 ```
 
@@ -91,8 +96,11 @@ aiem --version
 # 安装
 npm install -g aiemhub
 
-# 启动
-aiem --open
+# 后台启动
+aiem start
+
+# 查看状态
+aiem status
 ```
 
 添加和部署一个 Skill：
@@ -185,16 +193,21 @@ npx aiemhub
 #### Start the Web UI
 
 ```bash
-aiem
+aiem                # foreground (Ctrl+C to stop)
+aiem start          # background daemon
+aiem stop           # stop the daemon
+aiem status         # check daemon status
 ```
 
 Open http://127.0.0.1:8787 in your browser.
+
+Using `aiem start` runs the server as a background daemon — it keeps running even after you close the terminal.
 
 #### Custom port and host
 
 ```bash
 aiem --port 3000
-aiem --host 0.0.0.0 --port 8080
+aiem start --host 0.0.0.0 --port 8080
 aiem --open            # open browser on start
 ```
 
@@ -219,8 +232,11 @@ aiem --version
 # Install
 npm install -g aiemhub
 
-# Start
-aiem --open
+# Start as background daemon
+aiem start
+
+# Check status
+aiem status
 ```
 
 Add and deploy a Skill:
