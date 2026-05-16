@@ -374,9 +374,41 @@ const JS = `
     if(!code)return;
     try{Function('event',code).call(elt,ev)}catch(e){console.error(e)}
   }
-  function bodyFor(form,submitter){
-    try{return new URLSearchParams(new FormData(form,submitter)).toString()}
-    catch(e){return new URLSearchParams(new FormData(form)).toString()}
+  function addControl(params,el){
+    if(!el||!el.name||el.disabled)return;
+    const tag=(el.tagName||'').toLowerCase();
+    const type=(el.type||'').toLowerCase();
+    if((type==='checkbox'||type==='radio')&&!el.checked)return;
+    if(tag==='select'&&el.multiple){
+      Array.from(el.selectedOptions||[]).forEach(opt=>params.append(el.name,opt.value));
+      return;
+    }
+    params.append(el.name,el.value==null?'':el.value);
+  }
+  function addControls(params,root){
+    if(!root)return;
+    if(root.matches&&root.matches('input,select,textarea,button'))addControl(params,root);
+    root.querySelectorAll&&root.querySelectorAll('input,select,textarea').forEach(el=>addControl(params,el));
+  }
+  function includeRoots(elt){
+    const spec=elt.getAttribute('hx-include');
+    if(!spec)return [];
+    return spec.split(',').map(s=>s.trim()).filter(Boolean).flatMap(sel=>{
+      if(sel.startsWith('closest ')){
+        const root=elt.closest(sel.slice(8).trim());
+        return root?[root]:[];
+      }
+      if(sel==='this')return [elt];
+      return Array.from(document.querySelectorAll(sel));
+    });
+  }
+  function bodyFor(elt,submitter){
+    const params=new URLSearchParams();
+    const form=elt&&elt.matches&&elt.matches('form')?elt:(elt&&elt.closest?elt.closest('form'):null);
+    if(form)addControls(params,form);
+    includeRoots(elt).forEach(root=>addControls(params,root));
+    if(submitter&&submitter.name)addControl(params,submitter);
+    return params.toString();
   }
   async function send(elt,method,url,body){
     method=(method||'get').toLowerCase();
@@ -417,13 +449,27 @@ const JS = `
   document.addEventListener('submit',ev=>{
     const form=ev.target&&ev.target.closest?ev.target.closest('form[hx-post],form[hx-get]'):null;
     if(!form)return;
-    const confirmText=form.getAttribute('hx-confirm');
+    const submitter=ev.submitter;
+    const confirmText=(submitter&&submitter.getAttribute&&submitter.getAttribute('hx-confirm'))||form.getAttribute('hx-confirm');
     if(confirmText&&!window.confirm(confirmText)){ev.preventDefault();return;}
     const post=form.getAttribute('hx-post');
     const get=form.getAttribute('hx-get');
     if(!post&&!get)return;
     ev.preventDefault();
-    send(form,post?'post':'get',post||get,bodyFor(form,ev.submitter));
+    send(form,post?'post':'get',post||get,bodyFor(form,submitter));
+  });
+  document.addEventListener('click',ev=>{
+    const target=ev.target instanceof Element?ev.target:null;
+    const elt=target&&target.closest('[hx-post],[hx-get]');
+    if(!elt||elt.matches('form'))return;
+    if(elt.closest('form[hx-post],form[hx-get]')&&((elt.tagName||'').toLowerCase()==='button'||(elt.type||'').toLowerCase()==='submit'))return;
+    const confirmText=elt.getAttribute('hx-confirm');
+    if(confirmText&&!window.confirm(confirmText)){ev.preventDefault();return;}
+    const post=elt.getAttribute('hx-post');
+    const get=elt.getAttribute('hx-get');
+    if(!post&&!get)return;
+    ev.preventDefault();
+    send(elt,post?'post':'get',post||get,bodyFor(elt,elt));
   });
   const inputTimers=new WeakMap();
   document.addEventListener('input',ev=>{
@@ -437,6 +483,14 @@ const JS = `
     if(name==='refresh'&&elt&&elt.getAttribute&&elt.getAttribute('hx-get'))send(elt,'get',elt.getAttribute('hx-get'),'');
     else fire(elt||document.body,name,{elt:elt});
   }};
+  if(window.EventSource&&document.body&&document.body.getAttribute('sse-connect')){
+    try{
+      const es=new EventSource(document.body.getAttribute('sse-connect'));
+      es.onopen=()=>fire(document.body,'htmx:sseOpen',{source:es});
+      es.onerror=()=>fire(document.body,'htmx:sseError',{source:es});
+      es.onmessage=ev=>fire(document.body,'htmx:sseMessage',{data:ev.data,source:es});
+    }catch(e){}
+  }
 })();
 
 (function(){

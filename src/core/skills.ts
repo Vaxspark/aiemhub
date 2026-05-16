@@ -1,5 +1,6 @@
 import * as fs from "fs";
 import * as path from "path";
+import * as os from "os";
 import { readJsonFile, writeJsonFile, removePath, hashDir } from "./fs-util.js";
 import * as paths from "./paths.js";
 import { IDES, findIde } from "./ide.js";
@@ -235,14 +236,14 @@ export function createLocalSkill(name: string, content: string): Skill {
 export function deploySkill(skill: Skill, ideId: string, projectPath?: string): string {
   const ide = findIde(ideId);
   if (!ide) throw new Error(`unknown IDE: ${ideId}`);
-  const root = projectPath || require("os").homedir();
+  const root = projectPath || os.homedir();
   const targetDir = path.join(root, ide.skillsDir);
   fs.mkdirSync(targetDir, { recursive: true });
   const linkName = path.basename(skill.path);
   const linkPath = path.join(targetDir, linkName);
   if (fs.existsSync(linkPath)) removePath(linkPath);
   try {
-    fs.symlinkSync(skill.path, linkPath, "junction");
+    fs.symlinkSync(skill.path, linkPath, process.platform === "win32" ? "junction" : "dir");
   } catch {
     fs.symlinkSync(skill.path, linkPath, "dir");
   }
@@ -257,7 +258,7 @@ export function deploySkill(skill: Skill, ideId: string, projectPath?: string): 
 export function undeploySkill(skill: Skill, ideId: string, projectPath?: string): void {
   const ide = findIde(ideId);
   if (!ide) return;
-  const root = projectPath || require("os").homedir();
+  const root = projectPath || os.homedir();
   const targetDir = path.join(root, ide.skillsDir);
   const linkName = path.basename(skill.path);
   const linkPath = path.join(targetDir, linkName);
@@ -286,8 +287,10 @@ export function undeployAllGlobal(reg: SkillRegistry): number {
 export function removeSkill(reg: SkillRegistry, id: string): void {
   const skill = reg.get(id);
   if (!skill) throw new Error(`skill ${id} not found`);
-  for (const [ideId] of Object.entries(skill.deployments)) {
-    undeploySkill(skill, ideId);
+  for (const [ideId, roots] of Object.entries(skill.deployments)) {
+    for (const root of [...roots]) {
+      undeploySkill(skill, ideId, root === "~" ? undefined : root);
+    }
   }
   if (fs.existsSync(skill.path)) {
     const trashDest = path.join(paths.trashDir(), `${Date.now()}_${path.basename(skill.path)}`);

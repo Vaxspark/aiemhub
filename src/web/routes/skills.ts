@@ -106,7 +106,7 @@ export function skillsRouter(st: AppState): Router {
       try { fs.rmSync(tempDir, { recursive: true, force: true }); } catch {}
       toastInfo(st, `installed ${installed} skill(s), imported ${importedMcp} MCP server(s) from ${owner}/${repo}`);
       invalidate(st, "skills");
-    } catch (e: any) { toastError(st, e.message); }
+    } catch (e: any) { return fail(res, st, e.message); }
     res.send("ok");
   });
 
@@ -165,13 +165,13 @@ export function skillsRouter(st: AppState): Router {
     try {
       const reg = SkillRegistry.load();
       const skill = reg.get(id);
-      if (!skill) { toastError(st, `${id} not found`); return res.status(404).send("nf"); }
+      if (!skill) return fail(res, st, `${id} not found`, 404);
       const link = deploySkill(skill, ideId, project);
       reg.upsert(skill);
       reg.save();
       toastInfo(st, `deployed \u2192 ${link}`);
       invalidate(st, "skills");
-    } catch (e: any) { toastError(st, `deploy: ${e.message}`); }
+    } catch (e: any) { return fail(res, st, `deploy: ${e.message}`); }
     res.send("ok");
   });
 
@@ -182,19 +182,27 @@ export function skillsRouter(st: AppState): Router {
     try {
       const reg = SkillRegistry.load();
       const skill = reg.get(id);
-      if (!skill) { toastError(st, `${id} not found`); return res.status(404).send("nf"); }
+      if (!skill) return fail(res, st, `${id} not found`, 404);
       undeploySkill(skill, ideId, project);
       reg.upsert(skill);
       reg.save();
       toastInfo(st, `undeployed ${id}`);
       invalidate(st, "skills");
-    } catch (e: any) { toastError(st, `undeploy: ${e.message}`); }
+    } catch (e: any) { return fail(res, st, `undeploy: ${e.message}`); }
     res.send("ok");
   });
 
-  router.post("/skills/:id/update", (req, res) => {
-    toastInfo(st, "GitHub update not yet implemented in TS build");
-    res.status(202).send("ok");
+  router.post("/skills/:id/update", async (req, res) => {
+    try {
+      const reg = SkillRegistry.load();
+      const skill = reg.get(req.params.id);
+      if (!skill) return fail(res, st, `${req.params.id} not found`, 404);
+      const sha = await updateGithubSkill(reg, skill);
+      reg.save();
+      toastInfo(st, `updated ${skill.name} @ ${sha.slice(0, 12)}`);
+      invalidate(st, "skills");
+    } catch (e: any) { return fail(res, st, `update: ${e.message}`); }
+    res.send("ok");
   });
 
   router.post("/skills/:id/remove", async (req, res) => {
@@ -204,7 +212,7 @@ export function skillsRouter(st: AppState): Router {
       reg.save();
       toastInfo(st, `removed ${req.params.id}`);
       invalidate(st, "skills");
-    } catch (e: any) { toastError(st, `remove: ${e.message}`); }
+    } catch (e: any) { return fail(res, st, `remove: ${e.message}`); }
     res.send("ok");
   });
 
@@ -212,23 +220,49 @@ export function skillsRouter(st: AppState): Router {
     const id = req.params.id;
     const normalized = applyGithubProxyEnv(req.body.source || "");
     const newSource = parseGithubSource(normalized);
-    if (!newSource) { toastError(st, "invalid GitHub source"); return res.status(400).send("bad"); }
+    if (!newSource) return fail(res, st, "invalid GitHub source", 400);
     try {
       const reg = SkillRegistry.load();
       const skill = reg.get(id);
-      if (!skill) { toastError(st, `${id} not found`); return res.status(404).send("nf"); }
+      if (!skill) return fail(res, st, `${id} not found`, 404);
       skill.source = newSource;
       reg.upsert(skill);
       reg.save();
       toastInfo(st, `linked ${id} to GitHub`);
       invalidate(st, "skills");
-    } catch (e: any) { toastError(st, `save: ${e.message}`); }
+    } catch (e: any) { return fail(res, st, `save: ${e.message}`); }
     res.send("ok");
   });
 
-  router.post("/skills/group/:owner/:repo/sync", (req, res) => {
-    toastInfo(st, "GitHub sync not yet implemented in TS build");
-    res.status(202).send("ok");
+  router.post("/skills/group/:owner/:repo/sync", async (req, res) => {
+    const { owner, repo } = req.params;
+    try {
+      const reg = SkillRegistry.load();
+      const skills = reg.list().filter((s) => s.source.type === "github" && s.source.owner === owner && s.source.repo === repo);
+      let updated = 0;
+      const failures: string[] = [];
+      let lastSha = "";
+      for (const skill of skills) {
+        try {
+          lastSha = await updateGithubSkill(reg, skill);
+          updated++;
+        } catch (e: any) {
+          failures.push(`${skill.name}: ${e.message}`);
+        }
+      }
+      if (updated > 0) reg.save();
+      if (updated > 0) {
+        toastInfo(st, `updated ${updated} skill(s) from ${owner}/${repo}${lastSha ? ` @ ${lastSha.slice(0, 12)}` : ""}`);
+        invalidate(st, "skills");
+      }
+      if (failures.length > 0) {
+        toastError(st, `failed ${failures.length} update(s): ${failures.slice(0, 2).join("; ")}`);
+        if (updated === 0) return res.status(500).send(failures.join("\n"));
+      } else if (updated === 0) {
+        toastInfo(st, `no skills found for ${owner}/${repo}`);
+      }
+    } catch (e: any) { return fail(res, st, `sync: ${e.message}`); }
+    res.send("ok");
   });
 
   router.post("/skills/group/:owner/:repo/deploy-all", (req, res) => {
@@ -236,6 +270,7 @@ export function skillsRouter(st: AppState): Router {
     const ideId = req.body.ide;
     const project = (req.body.project || "").trim() || undefined;
     try {
+      if (!ideId) return fail(res, st, "target IDE is required", 400);
       const reg = SkillRegistry.load();
       const ids = reg.list().filter((s) => s.source.type === "github" && s.source.owner === owner && s.source.repo === repo).map((s) => s.id);
       let ok = 0;
@@ -244,8 +279,9 @@ export function skillsRouter(st: AppState): Router {
         if (skill) { deploySkill(skill, ideId, project); reg.upsert(skill); ok++; }
       }
       reg.save();
-      if (ok > 0) { toastInfo(st, `deployed ${ok}/${ids.length} to ${ideId}`); invalidate(st, "skills"); }
-    } catch (e: any) { toastError(st, e.message); }
+      toastInfo(st, ok > 0 ? `deployed ${ok}/${ids.length} to ${ideId}` : `no skills found for ${owner}/${repo}`);
+      invalidate(st, "skills");
+    } catch (e: any) { return fail(res, st, e.message); }
     res.send("ok");
   });
 
@@ -254,6 +290,7 @@ export function skillsRouter(st: AppState): Router {
     const ideId = req.body.ide;
     const project = (req.body.project || "").trim() || undefined;
     try {
+      if (!ideId) return fail(res, st, "target IDE is required", 400);
       const reg = SkillRegistry.load();
       const ids = reg.list().filter((s) => s.source.type === "github" && s.source.owner === owner && s.source.repo === repo).map((s) => s.id);
       let ok = 0;
@@ -264,7 +301,7 @@ export function skillsRouter(st: AppState): Router {
       reg.save();
       toastInfo(st, ok > 0 ? `undeployed ${ok} from ${ideId}` : "nothing to undeploy");
       invalidate(st, "skills");
-    } catch (e: any) { toastError(st, e.message); }
+    } catch (e: any) { return fail(res, st, e.message); }
     res.send("ok");
   });
 
@@ -276,8 +313,9 @@ export function skillsRouter(st: AppState): Router {
       let ok = 0;
       for (const id of ids) { try { removeSkill(reg, id); ok++; } catch {} }
       reg.save();
-      if (ok > 0) { toastInfo(st, `removed ${ok} skill(s) from ${owner}/${repo}`); invalidate(st, "skills"); }
-    } catch (e: any) { toastError(st, e.message); }
+      toastInfo(st, ok > 0 ? `removed ${ok} skill(s) from ${owner}/${repo}` : `no skills found for ${owner}/${repo}`);
+      invalidate(st, "skills");
+    } catch (e: any) { return fail(res, st, e.message); }
     res.send("ok");
   });
 
@@ -286,6 +324,66 @@ export function skillsRouter(st: AppState): Router {
 
 function tryLoad<T>(fn: () => T): T | undefined {
   try { return fn(); } catch { return undefined; }
+}
+
+function fail(res: Response, st: AppState, msg: string, status = 500): Response {
+  toastError(st, msg);
+  return res.status(status).send(msg);
+}
+
+function replaceDir(srcDir: string, destDir: string): void {
+  const parent = path.dirname(destDir);
+  fs.mkdirSync(parent, { recursive: true });
+  const suffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const tmpDir = path.join(parent, `.${path.basename(destDir)}.tmp-${suffix}`);
+  const backupDir = path.join(parent, `.${path.basename(destDir)}.bak-${suffix}`);
+  copyDirRecursive(srcDir, tmpDir);
+  let hasBackup = false;
+  try {
+    if (fs.existsSync(destDir)) {
+      fs.renameSync(destDir, backupDir);
+      hasBackup = true;
+    }
+    fs.renameSync(tmpDir, destDir);
+    if (hasBackup) fs.rmSync(backupDir, { recursive: true, force: true });
+  } catch (e) {
+    try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {}
+    if (hasBackup && !fs.existsSync(destDir) && fs.existsSync(backupDir)) {
+      try { fs.renameSync(backupDir, destDir); } catch {}
+    }
+    throw e;
+  }
+}
+
+async function updateGithubSkill(reg: SkillRegistry, skill: Skill): Promise<string> {
+  if (skill.source.type !== "github") throw new Error("skill is not linked to GitHub");
+  const source = skill.source;
+  const preview = await previewSkillsFromGithub(source.owner, source.repo, source.ref, source.subdir);
+  try {
+    const expectedSubdir = source.subdir || "";
+    const entry = preview.skills.find((s) => (s.subdir || "") === expectedSubdir) || (preview.skills.length === 1 ? preview.skills[0] : undefined);
+    if (!entry) throw new Error(`SKILL.md not found at ${expectedSubdir || "/"}`);
+    const srcDir = entry.subdir ? path.join(preview.topDir, entry.subdir) : preview.topDir;
+    const destDir = skill.path || path.join(paths.skillsDir(), skill.id);
+    const deployments = { ...skill.deployments };
+    replaceDir(srcDir, destDir);
+    const skillMd = path.join(destDir, "SKILL.md");
+    let description: string | undefined;
+    try { description = fs.readFileSync(skillMd, "utf-8").split("\n").find((l) => l.trim())?.replace(/^#+\s*/, ""); } catch {}
+    reg.upsert({
+      ...skill,
+      name: entry.name || skill.name,
+      source: { type: "github", owner: source.owner, repo: source.repo, ref: preview.ref, subdir: entry.subdir || undefined },
+      version: preview.sha || new Date().toISOString(),
+      path: destDir,
+      description,
+      deployments,
+      file_hashes: hashDir(destDir),
+    });
+    return preview.sha || "";
+  } finally {
+    try { fs.rmSync(preview.tempDir, { recursive: true, force: true }); } catch {}
+  }
 }
 
 function addForm(): string {
@@ -485,7 +583,7 @@ function renderSkillsPreview(preview: SkillsGithubPreview): string {
       </label>
     </div>` : ""}
     ${skills.length === 0 && mcpServers.length === 0 ? `<div class="meta">No skills or MCP servers detected.</div>` : ""}
-    <form id="skills-confirm-form" hx-post="/skills/github-confirm" hx-swap="none" hx-on--after-request="document.getElementById('skills-github-result').innerHTML='<span style=\\'color:var(--success)\\'>Installed!</span>'">
+    <form id="skills-confirm-form" hx-post="/skills/github-confirm" hx-swap="none" hx-on--after-request="if(event.detail.xhr.status>=200&&event.detail.xhr.status<300){document.getElementById('skills-github-result').innerHTML='<span style=\\'color:var(--success)\\'>Installed!</span>'}">
       <input type="hidden" name="preview_data" value="${esc(previewData)}">
       <div style="display:flex;gap:8px;align-items:center">
         ${btnPrimary("Confirm install")}
