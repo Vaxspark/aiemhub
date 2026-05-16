@@ -81,6 +81,8 @@ input,select,textarea{color-scheme:dark light}
 .skills-content,.wide-content{max-width:none}
 .mcp-content{width:100%;box-sizing:border-box}
 .mcp-content #mcp-list,.mcp-content .group-panel{width:100%;max-width:none}
+.mcp-content #mcp-list>.group-panel{overflow-x:auto}
+.mcp-content #mcp-list table.aiem{min-width:960px}
 .toast-area{position:fixed;top:var(--space-4);right:var(--space-4);z-index:100;width:min(340px,calc(100vw - 32px));pointer-events:none}
 .toast-area>*+*{margin-top:var(--space-2)}
 .toast{background:var(--surface);border:1px solid var(--stroke);color:var(--text);padding:var(--space-3) var(--space-4);border-radius:var(--radius-md);font-size:var(--font-sm);box-shadow:0 8px 32px rgba(0,0,0,.12);pointer-events:auto;opacity:0;transform:translateY(-6px);transition:opacity .2s,transform .2s}
@@ -180,6 +182,7 @@ textarea.field{font-family:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,
 .meta{font-size:var(--font-xs);color:var(--text-secondary)}
 .mono{font-family:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,monospace;font-size:var(--font-sm)}
 .row-gap{display:flex;flex-wrap:wrap;gap:4px;align-items:center}
+.flex{display:flex}.grid{display:grid}.items-center{align-items:center}.items-end{align-items:flex-end}.gap-2{gap:var(--space-2)}.gap-3{gap:var(--space-3)}
 .htmx-indicator{opacity:0;transition:opacity .2s}
 .htmx-request .htmx-indicator{opacity:1}
 .settings-grid{display:grid;grid-template-columns:1fr 1fr;gap:var(--space-5);align-items:start}
@@ -228,6 +231,20 @@ textarea.field{font-family:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,
   .nav-item::first-letter{font-size:var(--font-base)}
   .toolbar{padding-left:var(--space-3);padding-right:var(--space-3)}
   .content-padding{padding:var(--space-3)}
+  .mcp-content #mcp-list>.group-panel{overflow-x:visible}
+  .mcp-content #mcp-list table.aiem{min-width:0;table-layout:fixed}
+  .mcp-content #mcp-list table.aiem thead{display:none}
+  .mcp-content #mcp-list table.aiem th,.mcp-content #mcp-list table.aiem td{padding:8px 10px}
+  .mcp-content #mcp-list table.aiem th:nth-child(1){width:28%}
+  .mcp-content #mcp-list table.aiem th:nth-child(2){width:19%}
+  .mcp-content #mcp-list table.aiem th:nth-child(3){width:37%}
+  .mcp-content #mcp-list table.aiem th:nth-child(5){width:16%}
+  .mcp-content #mcp-list table.aiem th:nth-child(4),
+  .mcp-content #mcp-list tbody>tr:not([id^="mcp-detail"])>td:nth-child(4){display:none}
+  .mcp-content #mcp-list tbody>tr:not([id^="mcp-detail"])>td:nth-child(5) form{display:none!important}
+  .mcp-content #mcp-list tbody>tr:not([id^="mcp-detail"])>td:nth-child(5)>div{justify-content:flex-start}
+  .mcp-content #mcp-list tbody>tr:not([id^="mcp-detail"])>td:nth-child(5) .btn-ghost{padding:4px 8px}
+  .mcp-detail-panels{grid-template-columns:1fr!important}
 }
 `;
 
@@ -342,6 +359,87 @@ const JS = `
 })();
 
 (function(){
+  if(window.htmx)return;
+  function fire(target,name,detail){
+    const ev=new CustomEvent(name,{bubbles:true,detail:detail||{}});
+    (target||document.body).dispatchEvent(ev);
+    return ev;
+  }
+  function targetFor(elt){
+    const sel=elt.getAttribute('hx-target');
+    return sel?document.querySelector(sel):elt;
+  }
+  function afterHook(elt,ev){
+    const code=elt.getAttribute('hx-on--after-request')||elt.getAttribute('hx-on::after-request');
+    if(!code)return;
+    try{Function('event',code).call(elt,ev)}catch(e){console.error(e)}
+  }
+  function bodyFor(form,submitter){
+    try{return new URLSearchParams(new FormData(form,submitter)).toString()}
+    catch(e){return new URLSearchParams(new FormData(form)).toString()}
+  }
+  async function send(elt,method,url,body){
+    method=(method||'get').toLowerCase();
+    let requestUrl=url;
+    const init={method:method.toUpperCase(),headers:{}};
+    if(method==='get'){
+      if(body)requestUrl+=((requestUrl.indexOf('?')>=0?'&':'?')+body);
+    }else{
+      init.headers['Content-Type']='application/x-www-form-urlencoded;charset=UTF-8';
+      init.body=body||'';
+    }
+    let xhr={status:0,statusText:'',responseText:''};
+    try{
+      const resp=await fetch(requestUrl,init);
+      const text=await resp.text();
+      xhr={status:resp.status,statusText:resp.statusText,responseText:text};
+      const detail={xhr:xhr,elt:elt,requestConfig:{verb:method}};
+      if(!resp.ok){
+        const ev=fire(elt,'htmx:responseError',detail);
+        afterHook(elt,ev);
+        return;
+      }
+      const swap=(elt.getAttribute('hx-swap')||'innerHTML').toLowerCase();
+      const target=targetFor(elt);
+      if(swap!=='none'&&target){
+        if(swap.indexOf('outerhtml')>=0)target.outerHTML=text;
+        else target.innerHTML=text;
+        fire(target,'htmx:afterSwap',{target:target,elt:elt,xhr:xhr});
+      }
+      const ev=fire(elt,'htmx:afterRequest',detail);
+      afterHook(elt,ev);
+    }catch(e){
+      xhr={status:0,statusText:e&&e.message?e.message:'Network error',responseText:''};
+      const ev=fire(elt,'htmx:responseError',{xhr:xhr,elt:elt,requestConfig:{verb:method}});
+      afterHook(elt,ev);
+    }
+  }
+  document.addEventListener('submit',ev=>{
+    const form=ev.target&&ev.target.closest?ev.target.closest('form[hx-post],form[hx-get]'):null;
+    if(!form)return;
+    const confirmText=form.getAttribute('hx-confirm');
+    if(confirmText&&!window.confirm(confirmText)){ev.preventDefault();return;}
+    const post=form.getAttribute('hx-post');
+    const get=form.getAttribute('hx-get');
+    if(!post&&!get)return;
+    ev.preventDefault();
+    send(form,post?'post':'get',post||get,bodyFor(form,ev.submitter));
+  });
+  const inputTimers=new WeakMap();
+  document.addEventListener('input',ev=>{
+    const el=ev.target instanceof Element?ev.target:null;
+    const form=el&&el.closest?el.closest('form[hx-get]'):null;
+    if(!form||!(form.getAttribute('hx-trigger')||'').includes('input'))return;
+    if(inputTimers.has(form))clearTimeout(inputTimers.get(form));
+    inputTimers.set(form,setTimeout(()=>send(form,'get',form.getAttribute('hx-get'),bodyFor(form,null)),220));
+  });
+  window.htmx={trigger:function(elt,name){
+    if(name==='refresh'&&elt&&elt.getAttribute&&elt.getAttribute('hx-get'))send(elt,'get',elt.getAttribute('hx-get'),'');
+    else fire(elt||document.body,name,{elt:elt});
+  }};
+})();
+
+(function(){
   function toast(level,msg){
     const root=document.getElementById('toasts');
     if(!root)return;
@@ -358,6 +456,22 @@ const JS = `
     const t=document.getElementById('global-task-indicator');
     if(t)t.textContent=window.aiemTranslate?window.aiemTranslate(s||''):(s||'');
   }
+  const refreshTimers=new Map();
+  function refreshResource(resource){
+    if(!resource||typeof htmx==='undefined')return;
+    if(refreshTimers.has(resource))clearTimeout(refreshTimers.get(resource));
+    refreshTimers.set(resource,setTimeout(()=>{
+      refreshTimers.delete(resource);
+      document.querySelectorAll('[data-resource="'+resource+'"][hx-get]').forEach(el=>htmx.trigger(el,'refresh'));
+    },40));
+  }
+  function refreshCurrentResources(){
+    const seen=new Set();
+    document.querySelectorAll('[data-resource]').forEach(el=>{
+      const resource=el.getAttribute('data-resource');
+      if(resource&&!seen.has(resource)){seen.add(resource);refreshResource(resource)}
+    });
+  }
   document.body.addEventListener('htmx:sseOpen',()=>{const d=dot();if(d){d.classList.remove('dead');d.classList.add('live')}});
   document.body.addEventListener('htmx:sseError',()=>{const d=dot();if(d){d.classList.remove('live');d.classList.add('dead')}});
   document.body.addEventListener('htmx:sseMessage',function(ev){
@@ -367,10 +481,16 @@ const JS = `
       else if(data.kind==='task_started'){toast('info',data.label);setTaskLine(data.label)}
       else if(data.kind==='task_progress')setTaskLine(data.note);
       else if(data.kind==='task_finished'){toast(data.ok?'success':'error',data.msg);setTaskLine('')}
-      else if(data.kind==='invalidate'){
-        document.querySelectorAll('[data-resource="'+data.resource+'"]').forEach(el=>htmx.trigger(el,'refresh'));
-      }
+      else if(data.kind==='invalidate')refreshResource(data.resource);
     }catch(e){}
+  });
+  document.body.addEventListener('htmx:afterRequest',function(ev){
+    const d=ev.detail||{};
+    const xhr=d.xhr;
+    const elt=d.elt;
+    const verb=((d.requestConfig&&d.requestConfig.verb)||(elt&&elt.getAttribute&&elt.getAttribute('hx-post')?'post':'')).toLowerCase();
+    if(!xhr||verb!=='post'||xhr.status<200||xhr.status>=300)return;
+    if((xhr.responseText||'').trim()==='ok')refreshCurrentResources();
   });
   document.body.addEventListener('htmx:responseError',function(ev){
     toast('error','HTTP '+ev.detail.xhr.status+': '+(ev.detail.xhr.responseText||ev.detail.xhr.statusText));
@@ -386,9 +506,6 @@ export function page(title: string, active: string, body: string): string {
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <link rel="icon" type="image/png" href="${FAVICON}">
   <title>aiem \u00b7 ${esc(title)}</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script src="https://unpkg.com/htmx.org@1.9.12"></script>
-  <script src="https://unpkg.com/htmx.org@1.9.12/dist/ext/sse.js"></script>
   <style>${CSS}</style>
 </head>
 <body hx-ext="sse" sse-connect="/events">

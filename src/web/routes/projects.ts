@@ -4,7 +4,7 @@ import * as fs from "fs";
 import { IDES } from "../../core/ide.js";
 import { ProjectStore, type Project, detectProjectIdes } from "../../core/projects.js";
 import { SkillRegistry, deploySkill, undeploySkill } from "../../core/skills.js";
-import { McpRegistry } from "../../core/mcp.js";
+import { McpRegistry, deployToProject } from "../../core/mcp.js";
 import { page, pageHeader, btnPrimary, btnSecondary, btnDanger, emptyState, settingsGroup, card, tag, esc } from "../layout.js";
 import type { AppState } from "../state.js";
 import { toastInfo, toastError, invalidate } from "../tasks.js";
@@ -77,7 +77,11 @@ export function projectsRouter(st: AppState): Router {
           }
         }
         reg.save();
-        toastInfo(st, `deployed ${count} skill\u00d7IDE link(s)`);
+        let mcpCount = 0;
+        for (const mid of mcpServers) {
+          mcpCount += deployToProject(mid, projectPath, ides).length;
+        }
+        toastInfo(st, `deployed ${count} skill\u00d7IDE link(s), ${mcpCount} MCP config file(s)`);
       } else {
         toastInfo(st, "project config saved");
       }

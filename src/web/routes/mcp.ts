@@ -8,7 +8,7 @@ import { page, pageHeader, btnPrimary, btnSecondary, btnDanger, emptyState, tag,
 import type { AppState } from "../state.js";
 import { toastInfo, toastError, invalidate } from "../tasks.js";
 import * as paths from "../../core/paths.js";
-import { previewMcpFromGithub, parseGithubInput } from "../../core/github.js";
+import { previewMcpFromGithub, parseGithubInput, materializeGithubMcpBundle } from "../../core/github.js";
 
 const TEMPLATE = `{
   "server-name": {
@@ -33,7 +33,7 @@ export function mcpRouter(st: AppState): Router {
       `)}
       <div class="content-padding wide-content mcp-content">
         <div id="mcp-add" hidden>${addForms()}</div>
-        <div id="mcp-bundles" hidden>${bundlesPanel()}</div>
+        <div id="mcp-bundles" hidden data-resource="mcp" hx-get="/mcp/bundles/fragment" hx-trigger="refresh from:body" hx-swap="innerHTML">${bundlesPanel()}</div>
         <form style="display:flex;gap:8px;align-items:center;margin-bottom:16px" hx-get="/mcp/fragment" hx-target="#mcp-list" hx-trigger="input changed delay:200ms from:input[name=q], refresh" hx-swap="innerHTML">
           <input name="q" class="field" placeholder="Filter servers\u2026" value="${esc(q)}" style="max-width:320px">
         </form>
@@ -44,6 +44,10 @@ export function mcpRouter(st: AppState): Router {
 
   router.get("/mcp/fragment", (req, res) => {
     res.send(render(tryLoad(() => st.mcp()), ((req.query.q as string) || "").trim()));
+  });
+
+  router.get("/mcp/bundles/fragment", (_req, res) => {
+    res.send(bundlesPanel());
   });
 
   router.post("/mcp/add-json", (req, res) => {
@@ -108,16 +112,19 @@ export function mcpRouter(st: AppState): Router {
   });
 
   router.post("/mcp/github-confirm", (req, res) => {
+    let tempDir: string | undefined;
     try {
       const data = JSON.parse(req.body.preview_data || "{}");
+      tempDir = data.tempDir;
       const servers: McpServer[] = data.servers || [];
       if (servers.length === 0) throw new Error("No servers to import");
       const reg = McpRegistry.load();
-      for (const s of servers) reg.upsert(s);
+      for (const s of servers) reg.upsert(data.topDir ? materializeGithubMcpBundle(s, data.topDir) : s);
       reg.save();
       toastInfo(st, `imported ${servers.length} server(s) from ${data.owner}/${data.repo}`);
       invalidate(st, "mcp");
     } catch (e: any) { toastError(st, e.message); }
+    finally { if (tempDir) { try { fs.rmSync(tempDir, { recursive: true, force: true }); } catch {} } }
     res.send("ok");
   });
 
@@ -236,7 +243,7 @@ function addForms(): string {
     </div>
     <div id="mcp-github" hidden style="margin-top:12px;border-top:1px solid var(--stroke-light);padding-top:12px">
       <div style="font-size:13px;font-weight:600;margin-bottom:4px">Import from GitHub</div>
-      <div class="meta" style="margin-bottom:8px">Paste a GitHub repo URL or owner/repo. Looks for MCP config in the repo root (mcp.json, .mcp.json, etc.).</div>
+      <div class="meta" style="margin-bottom:8px">Paste a GitHub repo URL or owner/repo. Looks for MCP config files, then auto-detects Python/Node MCP server directories.</div>
       <form hx-post="/mcp/github-preview" hx-swap="innerHTML" hx-target="#mcp-github-result" style="display:flex;gap:8px;align-items:end">
         <div style="flex:1"><label class="label">GitHub source</label><input name="source" required class="field" placeholder="owner/repo or https://github.com/owner/repo"></div>
         <div><label class="label">Ref (optional)</label><input name="ref" class="field" placeholder="main" style="width:100px"></div>
@@ -347,7 +354,7 @@ function renderRow(s: McpServer, projects: [string, string][]): string {
         <div style="display:grid;grid-template-columns:auto 1fr;gap:2px 10px;font-size:11px">
           ${envEntries.map(([k, v]) => `<span class="mono" style="color:var(--fg-muted)">${esc(k)}</span><span class="mono meta">${v.length > 40 ? esc(v.slice(0, 37)) + "\u2026" : esc(v)}</span>`).join("")}
         </div></div>` : ""}
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:12px">
+      <div class="mcp-detail-panels" style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:12px">
         <div>
           <div class="label">Project scope</div>
           ${mcpScopeTable(deployedOn)}
@@ -393,11 +400,12 @@ function bundlesPanel(): string {
 function parseJsonServers(input: string): McpServer[] {
   const val = JSON.parse(input.trim());
   if (typeof val !== "object" || val === null) throw new Error("Expected a JSON object");
+  const serverMap = (val as any).mcpServers || (val as any).servers || val;
   const servers: McpServer[] = [];
-  if (val.command || val.url) {
-    servers.push(jsonToServer(val.name || "unnamed", val));
+  if ((serverMap as any).command || (serverMap as any).url) {
+    servers.push(jsonToServer((serverMap as any).name || "unnamed", serverMap));
   } else {
-    for (const [name, config] of Object.entries(val)) {
+    for (const [name, config] of Object.entries(serverMap)) {
       servers.push(jsonToServer(name, config as any));
     }
   }
@@ -422,7 +430,7 @@ function jsonToServer(name: string, val: any): McpServer {
 
 function renderMcpPreview(preview: import("../../core/github.js").McpGithubPreview): string {
   const { owner, repo, ref, configFile, servers } = preview;
-  const previewData = JSON.stringify({ owner, repo, ref, servers });
+  const previewData = JSON.stringify(preview);
   return `<div class="group-panel" style="padding:12px;margin-top:8px">
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
       <span style="color:var(--success);font-weight:600">\u2713 Found ${servers.length} server(s)</span>

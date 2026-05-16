@@ -10,7 +10,7 @@ import { toastInfo, toastError, invalidate, taskStarted, taskFinished } from "..
 import * as path from "path";
 import * as paths from "../../core/paths.js";
 import { hashDir } from "../../core/fs-util.js";
-import { parseGithubInput, previewSkillsFromGithub, copyDirRecursive, type SkillsGithubPreview } from "../../core/github.js";
+import { parseGithubInput, previewSkillsFromGithub, copyDirRecursive, materializeGithubMcpBundle, type SkillsGithubPreview } from "../../core/github.js";
 
 export function skillsRouter(st: AppState): Router {
   const router = Router();
@@ -68,10 +68,12 @@ export function skillsRouter(st: AppState): Router {
     try {
       const data = JSON.parse(req.body.preview_data || "{}");
       const { owner, repo, ref, sha, tempDir, topDir, skills: previewSkills, mcpServers } = data as SkillsGithubPreview;
-      if (!previewSkills || previewSkills.length === 0 && (!mcpServers || mcpServers.length === 0)) throw new Error("Nothing to install");
+      const skillsToInstall = previewSkills || [];
+      const serversToImport = mcpServers || [];
+      if (skillsToInstall.length === 0 && serversToImport.length === 0) throw new Error("Nothing to install");
       const reg = SkillRegistry.load();
       let installed = 0;
-      for (const entry of previewSkills) {
+      for (const entry of skillsToInstall) {
         const srcDir = entry.subdir ? path.join(topDir, entry.subdir) : topDir;
         if (!fs.existsSync(srcDir)) continue;
         const source: SkillSource = { type: "github", owner, repo, ref, subdir: entry.subdir || undefined };
@@ -91,14 +93,18 @@ export function skillsRouter(st: AppState): Router {
         installed++;
       }
       reg.save();
-      if (mcpServers && mcpServers.length > 0 && req.body.import_mcp === "on") {
+      let importedMcp = 0;
+      if (serversToImport.length > 0 && req.body.import_mcp === "on") {
         const mcpReg = McpRegistry.load();
-        for (const s of mcpServers) mcpReg.upsert(s);
+        for (const s of serversToImport) {
+          mcpReg.upsert(materializeGithubMcpBundle(s, topDir));
+          importedMcp++;
+        }
         mcpReg.save();
         invalidate(st, "mcp");
       }
       try { fs.rmSync(tempDir, { recursive: true, force: true }); } catch {}
-      toastInfo(st, `installed ${installed} skill(s) from ${owner}/${repo}`);
+      toastInfo(st, `installed ${installed} skill(s), imported ${importedMcp} MCP server(s) from ${owner}/${repo}`);
       invalidate(st, "skills");
     } catch (e: any) { toastError(st, e.message); }
     res.send("ok");
@@ -480,7 +486,7 @@ function renderSkillsPreview(preview: SkillsGithubPreview): string {
     </div>` : ""}
     ${skills.length === 0 && mcpServers.length === 0 ? `<div class="meta">No skills or MCP servers detected.</div>` : ""}
     <form id="skills-confirm-form" hx-post="/skills/github-confirm" hx-swap="none" hx-on--after-request="document.getElementById('skills-github-result').innerHTML='<span style=\\'color:var(--success)\\'>Installed!</span>'">
-      <input type="hidden" name="preview_data" value='${esc(previewData)}'>
+      <input type="hidden" name="preview_data" value="${esc(previewData)}">
       <div style="display:flex;gap:8px;align-items:center">
         ${btnPrimary("Confirm install")}
         <button type="button" class="btn-ghost" onclick="document.getElementById('skills-github-result').innerHTML=''">Cancel</button>
