@@ -480,7 +480,15 @@ const JS = `
     inputTimers.set(form,setTimeout(()=>send(form,'get',form.getAttribute('hx-get'),bodyFor(form,null)),220));
   });
   window.htmx={trigger:function(elt,name){
-    if(name==='refresh'&&elt&&elt.getAttribute&&elt.getAttribute('hx-get'))send(elt,'get',elt.getAttribute('hx-get'),'');
+    if(name==='refresh'&&elt&&elt.getAttribute&&elt.getAttribute('hx-get')){
+      let body='';
+      const id=elt.getAttribute('id');
+      if(id){
+        const form=document.querySelector('form[hx-target="#'+id.replace(/"/g,'\\"')+'"]');
+        if(form)body=bodyFor(form,null);
+      }
+      send(elt,'get',elt.getAttribute('hx-get'),body);
+    }
     else fire(elt||document.body,name,{elt:elt});
   }};
   if(window.EventSource&&document.body&&document.body.getAttribute('sse-connect')){
