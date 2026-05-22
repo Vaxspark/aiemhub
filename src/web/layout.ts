@@ -166,6 +166,22 @@ textarea.field{font-family:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,
 .detail-action-row-linked>form:last-child .btn-danger{min-width:54px}
 .skill-md-slot{height:360px;min-height:360px}
 .skill-md-preview{width:100%;height:360px;min-height:360px;max-height:360px;overflow:auto;background:var(--surface-alt);border:1px solid var(--stroke-light);border-radius:var(--radius-sm);padding:12px;font-family:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;line-height:1.58;white-space:pre-wrap;word-break:break-word;color:var(--text)}
+.skill-md-rendered{width:100%;height:360px;min-height:360px;max-height:360px;overflow:auto;background:var(--surface-alt);border:1px solid var(--stroke-light);border-radius:var(--radius-sm);padding:16px 20px;font-size:13px;line-height:1.65;color:var(--text);word-break:break-word}
+.skill-md-rendered h1{font-size:18px;font-weight:700;margin:0 0 8px;border-bottom:1px solid var(--stroke-light);padding-bottom:6px}
+.skill-md-rendered h2{font-size:16px;font-weight:650;margin:14px 0 6px}
+.skill-md-rendered h3{font-size:14px;font-weight:600;margin:12px 0 4px}
+.skill-md-rendered h4,.skill-md-rendered h5,.skill-md-rendered h6{font-size:13px;font-weight:600;margin:10px 0 4px}
+.skill-md-rendered p{margin:0 0 8px}
+.skill-md-rendered ul,.skill-md-rendered ol{margin:0 0 8px;padding-left:20px}
+.skill-md-rendered li{margin-bottom:3px}
+.skill-md-rendered pre{background:var(--surface);border:1px solid var(--stroke-light);border-radius:var(--radius-sm);padding:10px 12px;overflow-x:auto;font-family:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;line-height:1.5;margin:0 0 8px}
+.skill-md-rendered code{font-family:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,monospace;font-size:12px}
+.skill-md-rendered :not(pre)>code{background:var(--surface);border:1px solid var(--stroke-light);border-radius:3px;padding:1px 4px}
+.skill-md-rendered a{color:var(--accent);text-decoration:none}
+.skill-md-rendered a:hover{text-decoration:underline}
+.skill-md-rendered hr{border:none;border-top:1px solid var(--stroke-light);margin:12px 0}
+.skill-md-rendered blockquote{border-left:3px solid var(--stroke);padding-left:12px;margin:0 0 8px;color:var(--text-secondary)}
+.btn-loading{opacity:.65;pointer-events:none;cursor:wait}
 .deploy-records{border:1px solid var(--stroke-light);border-radius:var(--radius-sm);overflow:auto;background:linear-gradient(180deg,var(--surface) 0%,var(--surface-alt) 100%);width:100%;max-width:none;min-height:172px;max-height:242px;scrollbar-gutter:auto;box-shadow:inset 0 1px 0 rgba(255,255,255,.04);scrollbar-width:thin;scrollbar-color:rgba(120,120,128,.36) transparent}
 .deploy-records::-webkit-scrollbar{width:8px;height:8px}
 .deploy-records::-webkit-scrollbar-track{background:color-mix(in srgb,var(--surface-alt) 84%,transparent);border-radius:999px;margin:6px 2px}
@@ -273,7 +289,9 @@ const JS = `
   const zh={'Library':'\\u8d44\\u6e90\\u5e93','Workspaces':'\\u5de5\\u4f5c\\u533a','Configuration':'\\u914d\\u7f6e','System':'\\u7cfb\\u7edf','Skills':'\\u6280\\u80fd','MCP Servers':'MCP \\u670d\\u52a1','MCP':'MCP','Projects':'\\u9879\\u76ee','Discover':'\\u53d1\\u73b0','Secrets':'\\u5bc6\\u94a5','IDEs':'IDE','Settings':'\\u8bbe\\u7f6e','Toggle theme':'\\u5207\\u6362\\u4e3b\\u9898','Clear global':'\\u6e05\\u7a7a\\u5168\\u5c40','New local':'\\u65b0\\u5efa\\u672c\\u5730','Add from GitHub':'\\u4ece GitHub \\u6dfb\\u52a0','Filter skills\\u2026':'\\u7b5b\\u9009\\u6280\\u80fd...','Filter servers\\u2026':'\\u7b5b\\u9009\\u670d\\u52a1...','Add skill from GitHub':'\\u4ece GitHub \\u6dfb\\u52a0\\u6280\\u80fd','Create a new local skill':'\\u65b0\\u5efa\\u672c\\u5730\\u6280\\u80fd','Source *':'\\u6765\\u6e90 *','Subdir (optional)':'\\u5b50\\u76ee\\u5f55\\uff08\\u53ef\\u9009\\uff09','Ref (optional)':'\\u5f15\\u7528\\uff08\\u53ef\\u9009\\uff09','Display name (optional)':'\\u663e\\u793a\\u540d\\u79f0\\uff08\\u53ef\\u9009\\uff09','Download & install':'\\u4e0b\\u8f7d\\u5e76\\u5b89\\u88c5','Cancel':'\\u53d6\\u6d88','Skill name *':'\\u6280\\u80fd\\u540d\\u79f0 *','SKILL.md content *':'SKILL.md \\u5185\\u5bb9 *','Create skill':'\\u521b\\u5efa\\u6280\\u80fd','No skills installed':'\\u6682\\u65e0\\u6280\\u80fd','No matches':'\\u6ca1\\u6709\\u5339\\u914d\\u7ed3\\u679c','Deploy all':'\\u5168\\u90e8\\u90e8\\u7f72','Undeploy all':'\\u5168\\u90e8\\u53d6\\u6d88','Update all':'\\u5168\\u90e8\\u66f4\\u65b0','Remove all':'\\u5168\\u90e8\\u5220\\u9664','Deploy':'\\u90e8\\u7f72','Undeploy':'\\u53d6\\u6d88\\u90e8\\u7f72','Update':'\\u66f4\\u65b0','Remove':'\\u79fb\\u9664','Delete':'\\u5220\\u9664','More':'\\u66f4\\u591a','Global':'\\u5168\\u5c40','Save':'\\u4fdd\\u5b58','Name *':'\\u540d\\u79f0 *','Actions':'\\u64cd\\u4f5c','Name':'\\u540d\\u79f0','Status':'\\u72b6\\u6001','Transport':'\\u4f20\\u8f93','Targets':'\\u76ee\\u6807','Path':'\\u8def\\u5f84','Version':'\\u7248\\u672c','Deployed':'\\u90e8\\u7f72','Deployment records':'\\u90e8\\u7f72\\u8bb0\\u5f55','Deploy project':'\\u90e8\\u7f72\\u9879\\u76ee','Target IDE':'\\u76ee\\u6807 IDE','Deployment status':'\\u90e8\\u7f72\\u72b6\\u6001','No deployment records.':'\\u6682\\u65e0\\u90e8\\u7f72\\u8bb0\\u5f55\\u3002','Synced':'\\u5df2\\u540c\\u6b65','Not synced':'\\u672a\\u540c\\u6b65','Disabled':'\\u5df2\\u7981\\u7528','Enable':'\\u542f\\u7528','Disable':'\\u7981\\u7528','Sync':'\\u540c\\u6b65','Sync all IDEs':'\\u540c\\u6b65\\u6240\\u6709 IDE','Add server':'\\u6dfb\\u52a0\\u670d\\u52a1','Bundles':'\\u670d\\u52a1\\u5305','Register':'\\u6ce8\\u518c','Configure':'\\u914d\\u7f6e','Close':'\\u5173\\u95ed','Save & Deploy':'\\u4fdd\\u5b58\\u5e76\\u90e8\\u7f72','Save only':'\\u4ec5\\u4fdd\\u5b58','Import':'\\u5bfc\\u5165','Set secret':'\\u8bbe\\u7f6e\\u5bc6\\u94a5','Save config':'\\u4fdd\\u5b58\\u914d\\u7f6e','Push to GitHub':'\\u63a8\\u9001\\u5230 GitHub','Pull from GitHub':'\\u4ece GitHub \\u62c9\\u53d6','Loading\\u2026':'\\u52a0\\u8f7d\\u4e2d...','View all files':'\\u67e5\\u770b\\u6240\\u6709\\u6587\\u4ef6','Link GitHub':'\\u5173\\u8054 GitHub','local':'\\u672c\\u5730',
     'GitHub Token':'GitHub \\u4ee4\\u724c','Personal access token for GitHub API':'\\u7528\\u4e8e GitHub API \\u7684\\u4e2a\\u4eba\\u8bbf\\u95ee\\u4ee4\\u724c','configured':'\\u5df2\\u914d\\u7f6e','not set':'\\u672a\\u8bbe\\u7f6e','Clear':'\\u6e05\\u9664','Backup & Restore':'\\u5907\\u4efd\\u4e0e\\u6062\\u590d','Local snapshots and GitHub sync':'\\u672c\\u5730\\u5feb\\u7167\\u4e0e GitHub \\u540c\\u6b65','Auto-backup interval':'\\u81ea\\u52a8\\u5907\\u4efd\\u95f4\\u9694','Local snapshot':'\\u672c\\u5730\\u5feb\\u7167','Snapshot now':'\\u7acb\\u5373\\u5feb\\u7167','Export / Restore':'\\u5bfc\\u51fa / \\u6062\\u590d','Export':'\\u5bfc\\u51fa','Restore':'\\u6062\\u590d','GitHub backup':'GitHub \\u5907\\u4efd','Repo URL (HTTPS)':'\\u4ed3\\u5e93\\u5730\\u5740 (HTTPS)','Proxy (optional)':'\\u4ee3\\u7406\\uff08\\u53ef\\u9009\\uff09','Verify':'\\u9a8c\\u8bc1','Host Info':'\\u4e3b\\u673a\\u4fe1\\u606f','Runtime environment details':'\\u8fd0\\u884c\\u73af\\u5883\\u8be6\\u60c5','Hostname':'\\u4e3b\\u673a\\u540d','User':'\\u7528\\u6237','Trash':'\\u56de\\u6536\\u7ad9','Removed items are moved to trash, not hard-deleted':'\\u79fb\\u9664\\u7684\\u9879\\u76ee\\u4f1a\\u79fb\\u5230\\u56de\\u6536\\u7ad9\\uff0c\\u4e0d\\u4f1a\\u786c\\u5220\\u9664','Open trash':'\\u6253\\u5f00\\u56de\\u6536\\u7ad9','About':'\\u5173\\u4e8e','empty trash':'\\u6e05\\u7a7a\\u56de\\u6536\\u7ad9','Overwrite current config from this snapshot?':'\\u4ece\\u6b64\\u5feb\\u7167\\u8986\\u76d6\\u5f53\\u524d\\u914d\\u7f6e\\uff1f','Restore config from GitHub? This overwrites current data.':'\\u4ece GitHub \\u6062\\u590d\\u914d\\u7f6e\\uff1f\\u8fd9\\u5c06\\u8986\\u76d6\\u5f53\\u524d\\u6570\\u636e\\u3002','Take local snapshot':'\\u521b\\u5efa\\u672c\\u5730\\u5feb\\u7167','Saves registries into':'\\u5c06\\u6ce8\\u518c\\u8868\\u4fdd\\u5b58\\u5230',
     'From GitHub':'\\u4ece GitHub \\u5bfc\\u5165','Import from GitHub':'\\u4ece GitHub \\u5bfc\\u5165','Paste a GitHub repo URL or owner/repo. Looks for MCP config in the repo root (mcp.json, .mcp.json, etc.).':'\\u7c98\\u8d34 GitHub \\u4ed3\\u5e93\\u5730\\u5740\\u6216 owner/repo\\u3002\\u81ea\\u52a8\\u5728\\u4ed3\\u5e93\\u4e2d\\u67e5\\u627e MCP \\u914d\\u7f6e\\u6587\\u4ef6\\u3002','GitHub source':'GitHub \\u6765\\u6e90','Fetch & import':'\\u62c9\\u53d6\\u5e76\\u5bfc\\u5165','Fetch & preview':'\\u62c9\\u53d6\\u5e76\\u9884\\u89c8','Confirm import':'\\u786e\\u8ba4\\u5bfc\\u5165','Confirm install':'\\u786e\\u8ba4\\u5b89\\u88c5','Ref (optional)':'\\u5206\\u652f\\uff08\\u53ef\\u9009\\uff09','Quick form':'\\u5feb\\u901f\\u586b\\u5199','Add MCP server \\u2014 paste JSON':'\\u6dfb\\u52a0 MCP \\u670d\\u52a1 \\u2014 \\u7c98\\u8d34 JSON','Supports a single server or a map of name \\u2192 config.':'\\u652f\\u6301\\u5355\\u4e2a\\u670d\\u52a1\\u6216\\u540d\\u79f0 \\u2192 \\u914d\\u7f6e\\u7684\\u6620\\u5c04\\u3002','Stdio server':'Stdio \\u670d\\u52a1','Add stdio':'\\u6dfb\\u52a0 stdio','Add URL server':'\\u6dfb\\u52a0 URL \\u670d\\u52a1','SSE / HTTP server':'SSE / HTTP \\u670d\\u52a1','Add server':'\\u6dfb\\u52a0\\u670d\\u52a1','Bundles':'\\u670d\\u52a1\\u5305','MCP Bundles':'MCP \\u670d\\u52a1\\u5305','Sync all IDEs':'\\u540c\\u6b65\\u6240\\u6709 IDE','No MCP servers yet':'\\u6682\\u65e0 MCP \\u670d\\u52a1','Filter servers\\u2026':'\\u7b5b\\u9009\\u670d\\u52a1...','Undeploy from the selected IDE/scope?':'\\u4ece\\u9009\\u5b9a\\u7684 IDE/\\u4f5c\\u7528\\u57df\\u53d6\\u6d88\\u90e8\\u7f72\\uff1f','Remove this MCP server?':'\\u79fb\\u9664\\u6b64 MCP \\u670d\\u52a1\\uff1f','Remove from the selected IDE/scope?':'\\u4ece\\u9009\\u5b9a\\u7684 IDE/\\u4f5c\\u7528\\u57df\\u79fb\\u9664\\uff1f','Project scope':'\\u9879\\u76ee\\u4f5c\\u7528\\u57df','No projects deployed.':'\\u6682\\u65e0\\u90e8\\u7f72\\u9879\\u76ee\\u3002',
-    'Detected skills':'\\u68c0\\u6d4b\\u5230\\u7684\\u6280\\u80fd','Detected MCP servers':'\\u68c0\\u6d4b\\u5230\\u7684 MCP \\u670d\\u52a1','Also import MCP servers':'\\u540c\\u65f6\\u5bfc\\u5165 MCP \\u670d\\u52a1','Config file':'\\u914d\\u7f6e\\u6587\\u4ef6','No servers detected':'\\u672a\\u68c0\\u6d4b\\u5230\\u670d\\u52a1','No skills detected':'\\u672a\\u68c0\\u6d4b\\u5230\\u6280\\u80fd','Command / URL':'\\u547d\\u4ee4/ URL','Description':'\\u63cf\\u8ff0','Subdir':'\\u5b50\\u76ee\\u5f55','Files':'\\u6587\\u4ef6','Installed!':'\\u5df2\\u5b89\\u88c5\\uff01','Imported!':'\\u5df2\\u5bfc\\u5165\\uff01','files':'\\u4e2a\\u6587\\u4ef6','Pushing to GitHub...':'\\u6b63\\u5728\\u63a8\\u9001\\u5230 GitHub...','Pulling from GitHub...':'\\u6b63\\u5728\\u4ece GitHub \\u62c9\\u53d6...','Pushed to GitHub successfully':'\\u5df2\\u6210\\u529f\\u63a8\\u9001\\u5230 GitHub','Pulled from GitHub and restored':'\\u5df2\\u4ece GitHub \\u62c9\\u53d6\\u5e76\\u6062\\u590d','Push failed':'\\u63a8\\u9001\\u5931\\u8d25','Pull failed':'\\u62c9\\u53d6\\u5931\\u8d25','No GitHub repo configured':'\\u672a\\u914d\\u7f6e GitHub \\u4ed3\\u5e93','target(s)':'\\u4e2a\\u76ee\\u6807','server(s)':'\\u4e2a\\u670d\\u52a1'};
+    'Detected skills':'\\u68c0\\u6d4b\\u5230\\u7684\\u6280\\u80fd','Detected MCP servers':'\\u68c0\\u6d4b\\u5230\\u7684 MCP \\u670d\\u52a1','Also import MCP servers':'\\u540c\\u65f6\\u5bfc\\u5165 MCP \\u670d\\u52a1','Config file':'\\u914d\\u7f6e\\u6587\\u4ef6','No servers detected':'\\u672a\\u68c0\\u6d4b\\u5230\\u670d\\u52a1','No skills detected':'\\u672a\\u68c0\\u6d4b\\u5230\\u6280\\u80fd','Command / URL':'\\u547d\\u4ee4/ URL','Description':'\\u63cf\\u8ff0','Subdir':'\\u5b50\\u76ee\\u5f55','Files':'\\u6587\\u4ef6','Installed!':'\\u5df2\\u5b89\\u88c5\\uff01','Imported!':'\\u5df2\\u5bfc\\u5165\\uff01','files':'\\u4e2a\\u6587\\u4ef6','Pushing to GitHub...':'\\u6b63\\u5728\\u63a8\\u9001\\u5230 GitHub...','Pulling from GitHub...':'\\u6b63\\u5728\\u4ece GitHub \\u62c9\\u53d6...','Pushed to GitHub successfully':'\\u5df2\\u6210\\u529f\\u63a8\\u9001\\u5230 GitHub','Pulled from GitHub and restored':'\\u5df2\\u4ece GitHub \\u62c9\\u53d6\\u5e76\\u6062\\u590d','Push failed':'\\u63a8\\u9001\\u5931\\u8d25','Pull failed':'\\u62c9\\u53d6\\u5931\\u8d25','No GitHub repo configured':'\\u672a\\u914d\\u7f6e GitHub \\u4ed3\\u5e93','target(s)':'\\u4e2a\\u76ee\\u6807','server(s)':'\\u4e2a\\u670d\\u52a1',
+    'Remote Repo Management':'\\u8fdc\\u7a0b\\u4ed3\\u5e93\\u7ba1\\u7406','View and delete skills/MCPs from your GitHub backup repo':'\\u67e5\\u770b\\u548c\\u5220\\u9664 GitHub \\u5907\\u4efd\\u4ed3\\u5e93\\u4e2d\\u7684 Skills/MCPs','Manage remote':'\\u7ba1\\u7406\\u8fdc\\u7a0b\\u4ed3\\u5e93','Configure repo first':'\\u8bf7\\u5148\\u914d\\u7f6e\\u4ed3\\u5e93','Sync from remote':'\\u4ece\\u8fdc\\u7a0b\\u540c\\u6b65','Delete selected':'\\u5220\\u9664\\u5df2\\u9009','Remote repo is empty':'\\u8fdc\\u7a0b\\u4ed3\\u5e93\\u4e3a\\u7a7a','Syncing remote repo...':'\\u6b63\\u5728\\u540c\\u6b65\\u8fdc\\u7a0b\\u4ed3\\u5e93...','Remote contents synced':'\\u8fdc\\u7a0b\\u5185\\u5bb9\\u5df2\\u540c\\u6b65','Deleting selected items...':'\\u6b63\\u5728\\u5220\\u9664\\u9009\\u4e2d\\u9879\\u76ee...','GITHUB_TOKEN saved':'GitHub \\u4ee4\\u724c\\u5df2\\u4fdd\\u5b58','Token is required':'\\u4ee4\\u724c\\u4e0d\\u80fd\\u4e3a\\u7a7a','MCP Bundles':'MCP \\u670d\\u52a1\\u5305',
+    'Scan local':'\\u626b\\u63cf\\u672c\\u5730','Scan local directory':'\\u626b\\u63cf\\u672c\\u5730\\u76ee\\u5f55','Scan a local directory for skills (SKILL.md) and MCP servers.':'\\u626b\\u63cf\\u672c\\u5730\\u76ee\\u5f55\\u67e5\\u627e\\u6280\\u80fd (SKILL.md) \\u548c MCP \\u670d\\u52a1\\u3002','Directory path *':'\\u76ee\\u5f55\\u8def\\u5f84 *','Scan':'\\u626b\\u63cf','Scan local directory for MCP servers':'\\u626b\\u63cf\\u672c\\u5730\\u76ee\\u5f55\\u67e5\\u627e MCP \\u670d\\u52a1'};
   const patterns=[
     [/^Remove all (\\d+) skills from this group\\?$/,m=>\`\\u5220\\u9664\\u8be5\\u7ec4\\u4e2d\\u7684 \${m[1]} \\u4e2a\\u6280\\u80fd\\uff1f\`],
     [/^(\\d+) IDE$/,m=>\`\${m[1]} \\u4e2a IDE\`],
@@ -420,6 +438,15 @@ const JS = `
       init.headers['Content-Type']='application/x-www-form-urlencoded;charset=UTF-8';
       init.body=body||'';
     }
+    var submitBtn=null;var origHtml='';
+    if(method!=='get'&&elt){
+      submitBtn=elt.querySelector('button[type="submit"]')||((elt.tagName||'').toLowerCase()==='button'?elt:null);
+      if(submitBtn&&!submitBtn.classList.contains('btn-loading')){
+        origHtml=submitBtn.innerHTML;
+        submitBtn.classList.add('btn-loading');
+        submitBtn.innerHTML='\\u23f3 '+origHtml;
+      }else{submitBtn=null}
+    }
     let xhr={status:0,statusText:'',responseText:''};
     try{
       const resp=await fetch(requestUrl,init);
@@ -444,8 +471,11 @@ const JS = `
       xhr={status:0,statusText:e&&e.message?e.message:'Network error',responseText:''};
       const ev=fire(elt,'htmx:responseError',{xhr:xhr,elt:elt,requestConfig:{verb:method}});
       afterHook(elt,ev);
+    }finally{
+      if(submitBtn){submitBtn.classList.remove('btn-loading');submitBtn.innerHTML=origHtml}
     }
   }
+  window.__aiemSend=send;
   document.addEventListener('submit',ev=>{
     const form=ev.target&&ev.target.closest?ev.target.closest('form[hx-post],form[hx-get]'):null;
     if(!form)return;
@@ -460,9 +490,14 @@ const JS = `
   });
   document.addEventListener('click',ev=>{
     const target=ev.target instanceof Element?ev.target:null;
-    const elt=target&&target.closest('[hx-post],[hx-get]');
+    if(!target)return;
+    var clickedBtn=target.closest?target.closest('button'):null;
+    if(clickedBtn&&clickedBtn.type==='button'&&!clickedBtn.getAttribute('hx-post')&&!clickedBtn.getAttribute('hx-get'))return;
+    const elt=target.closest('[hx-post],[hx-get]');
     if(!elt||elt.matches('form'))return;
     if(elt.closest('form[hx-post],form[hx-get]')&&((elt.tagName||'').toLowerCase()==='button'||(elt.type||'').toLowerCase()==='submit'))return;
+    var htTrigger=elt.getAttribute('hx-trigger')||'';
+    if(htTrigger&&htTrigger.indexOf('click')<0&&htTrigger.indexOf('submit')<0)return;
     const confirmText=elt.getAttribute('hx-confirm');
     if(confirmText&&!window.confirm(confirmText)){ev.preventDefault();return;}
     const post=elt.getAttribute('hx-post');
@@ -499,6 +534,58 @@ const JS = `
       es.onmessage=ev=>fire(document.body,'htmx:sseMessage',{data:ev.data,source:es});
     }catch(e){}
   }
+})();
+
+(function(){
+  var obs=new IntersectionObserver(function(entries){
+    entries.forEach(function(entry){
+      if(!entry.isIntersecting)return;
+      var el=entry.target;
+      obs.unobserve(el);
+      if(el.__aiemLoaded)return;
+      el.__aiemLoaded=true;
+      var get=el.getAttribute('hx-get');
+      if(get&&window.__aiemSend)window.__aiemSend(el,'get',get,'');
+    });
+  },{threshold:0.05});
+  function setup(root){
+    (root||document).querySelectorAll('[hx-trigger]').forEach(function(el){
+      if(el.__aiemObs)return;
+      var trigger=el.getAttribute('hx-trigger')||'';
+      if(trigger.indexOf('intersect')>=0){
+        el.__aiemObs=true;
+        obs.observe(el);
+      }
+      if(trigger.indexOf('load')>=0&&!el.__aiemLoaded){
+        el.__aiemObs=true;
+        el.__aiemLoaded=true;
+        var get=el.getAttribute('hx-get');
+        if(get&&window.__aiemSend){
+          setTimeout(function(){window.__aiemSend(el,'get',get,'')},10);
+        }
+      }
+    });
+  }
+  window.__aiemToggleDetail=function(id){
+    var el=document.getElementById(id);
+    if(!el)return;
+    el.toggleAttribute('hidden');
+    if(!el.hidden){
+      setTimeout(function(){
+        el.querySelectorAll('[hx-trigger]').forEach(function(slot){
+          var trigger=slot.getAttribute('hx-trigger')||'';
+          if(trigger.indexOf('intersect')<0)return;
+          if(slot.__aiemLoaded)return;
+          slot.__aiemLoaded=true;
+          var get=slot.getAttribute('hx-get');
+          if(get&&window.__aiemSend)window.__aiemSend(slot,'get',get,'');
+        });
+      },50);
+    }
+  };
+  if(document.body)setup(document);
+  document.addEventListener('DOMContentLoaded',function(){setup(document)});
+  if(document.body)document.body.addEventListener('htmx:afterSwap',function(ev){setup(ev.detail&&ev.detail.target?ev.detail.target:document)});
 })();
 
 (function(){

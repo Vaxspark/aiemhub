@@ -1,5 +1,5 @@
 export type ToastLevel = "info" | "success" | "warn" | "error";
-export type ResourceKind = "skills" | "mcp" | "secrets" | "projects" | "profiles";
+export type ResourceKind = "skills" | "mcp" | "secrets" | "projects" | "profiles" | "remote";
 
 export type UiEvent =
   | { kind: "toast"; level: ToastLevel; msg: string }

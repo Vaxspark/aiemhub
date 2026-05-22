@@ -334,7 +334,7 @@ function renderRow(s: McpServer, projects: [string, string][]): string {
       <form hx-post="/mcp/${enc}/remove" hx-swap="none" hx-confirm="Remove this MCP server?" style="display:inline">
         <button type="submit" class="btn-danger">Remove</button>
       </form>
-      <button type="button" class="btn-ghost" onclick="document.getElementById('mcp-detail-${rowId}').toggleAttribute('hidden')">More</button>
+      <button type="button" class="btn-ghost" onclick="__aiemToggleDetail('mcp-detail-${rowId}')">More</button>
     </div></td>
   </tr>
   <tr id="mcp-detail-${rowId}" hidden>

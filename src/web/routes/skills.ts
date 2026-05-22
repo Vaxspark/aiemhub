@@ -137,7 +137,7 @@ export function skillsRouter(st: AppState): Router {
     const id = req.query.id as string;
     try {
       const content = readSkillContent(id);
-      res.send(`<pre class="skill-md-preview">${esc(content)}</pre>`);
+      res.send(`<div class="skill-md-rendered">${simpleMarkdownToHtml(content)}</div>`);
     } catch (e: any) {
       res.send(`<div style="color:var(--danger);font-size:13px">Failed to read: ${esc(e.message)}</div>`);
     }
@@ -482,7 +482,7 @@ function renderSkillRow(s: Skill, projects: [string, string][]): string {
         <button type="submit" class="btn-primary" style="min-height:24px;padding:2px 8px;font-size:11px">Deploy</button>
       </form>
       ${!isLocal ? `<form hx-post="/skills/${encId}/update" hx-swap="none" style="display:inline"><button type="submit" class="btn-ghost">Update</button></form>` : ""}
-      <button type="button" class="btn-ghost" onclick="document.getElementById('detail-${rowId}').toggleAttribute('hidden')">More</button>
+      <button type="button" class="btn-ghost" onclick="__aiemToggleDetail('detail-${rowId}')">More</button>
     </div></td>
   </tr>
   <tr id="detail-${rowId}" hidden>
@@ -545,6 +545,87 @@ function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function inlineMdFormat(s: string): string {
+  s = s.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+  s = s.replace(/(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)/g, "<em>$1</em>");
+  s = s.replace(/`(.+?)`/g, '<code>$1</code>');
+  s = s.replace(/\[(.+?)\]\((.+?)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+  return s;
+}
+
+function simpleMarkdownToHtml(raw: string): string {
+  const lines = raw.split("\n");
+  const out: string[] = [];
+  let inCode = false;
+  let inList: "ul" | "ol" | null = null;
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+
+    if (trimmed.startsWith("```")) {
+      if (inCode) { out.push("</code></pre>"); inCode = false; }
+      else {
+        if (inList) { out.push(inList === "ol" ? "</ol>" : "</ul>"); inList = null; }
+        out.push('<pre><code>');
+        inCode = true;
+      }
+      continue;
+    }
+
+    if (inCode) { out.push(esc(line)); out.push("\n"); continue; }
+
+    if (!trimmed) {
+      if (inList) { out.push(inList === "ol" ? "</ol>" : "</ul>"); inList = null; }
+      continue;
+    }
+
+    if (trimmed.startsWith("---") && trimmed.replace(/-/g, "").trim() === "") {
+      if (inList) { out.push(inList === "ol" ? "</ol>" : "</ul>"); inList = null; }
+      out.push("<hr>");
+      continue;
+    }
+
+    if (trimmed.startsWith("> ")) {
+      if (inList) { out.push(inList === "ol" ? "</ol>" : "</ul>"); inList = null; }
+      out.push(`<blockquote>${inlineMdFormat(esc(trimmed.slice(2)))}</blockquote>`);
+      continue;
+    }
+
+    const h = trimmed.match(/^(#{1,6})\s+(.+)/);
+    if (h) {
+      if (inList) { out.push(inList === "ol" ? "</ol>" : "</ul>"); inList = null; }
+      const lv = h[1].length;
+      out.push(`<h${lv}>${inlineMdFormat(esc(h[2]))}</h${lv}>`);
+      continue;
+    }
+
+    if (/^[-*+]\s/.test(trimmed)) {
+      if (inList !== "ul") {
+        if (inList) out.push("</ol>");
+        out.push("<ul>"); inList = "ul";
+      }
+      out.push(`<li>${inlineMdFormat(esc(trimmed.replace(/^[-*+]\s+/, "")))}</li>`);
+      continue;
+    }
+
+    if (/^\d+\.\s/.test(trimmed)) {
+      if (inList !== "ol") {
+        if (inList) out.push("</ul>");
+        out.push("<ol>"); inList = "ol";
+      }
+      out.push(`<li>${inlineMdFormat(esc(trimmed.replace(/^\d+\.\s+/, "")))}</li>`);
+      continue;
+    }
+
+    if (inList) { out.push(inList === "ol" ? "</ol>" : "</ul>"); inList = null; }
+    out.push(`<p>${inlineMdFormat(esc(trimmed))}</p>`);
+  }
+
+  if (inCode) out.push("</code></pre>");
+  if (inList) out.push(inList === "ol" ? "</ol>" : "</ul>");
+  return out.join("\n");
 }
 
 function renderSkillsPreview(preview: SkillsGithubPreview): string {

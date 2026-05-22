@@ -2,10 +2,10 @@ import { Router } from "express";
 import * as os from "os";
 import * as fs from "fs";
 import { Vault } from "../../core/secrets.js";
-import { loadBackupConfig, saveBackupConfig, timeAgo, snapshotLocal, exportToDir, importFromDir, loadBackupTokenFile, saveBackupTokenFile, pushGithub, pullGithub, type BackupConfig } from "../../core/backup.js";
+import { loadBackupConfig, saveBackupConfig, timeAgo, snapshotLocal, exportToDir, importFromDir, loadBackupTokenFile, saveBackupTokenFile, pushGithub, pullGithub, syncRemoteToLocal, listRemoteContents, deleteRemoteItems, pushRemoteChanges, type BackupConfig, type RemoteItem } from "../../core/backup.js";
 import * as paths from "../../core/paths.js";
 import { removePath } from "../../core/fs-util.js";
-import { page, pageHeader, btnPrimary, btnDanger, tag, esc } from "../layout.js";
+import { page, pageHeader, btnPrimary, btnSecondary, btnDanger, tag, esc } from "../layout.js";
 import type { AppState } from "../state.js";
 import { toastInfo, toastError, invalidate, taskStarted, taskFinished } from "../tasks.js";
 
@@ -29,6 +29,7 @@ export function settingsRouter(st: AppState): Router {
         </div>
         <div class="settings-col">
           ${hostInfoCard(aiemHome)}
+          ${remoteRepoCard(!!backupCfg.github_repo)}
           ${trashCard()}
           ${aboutCard()}
         </div>
@@ -38,11 +39,14 @@ export function settingsRouter(st: AppState): Router {
 
   router.post("/settings/github-token", async (req, res) => {
     try {
+      const token = (req.body.token || "").trim();
+      if (!token) { toastError(st, "Token is required"); return res.send("ok"); }
       const vault = Vault.load();
-      await vault.set(GH_TOKEN_NAME, req.body.token, "GitHub Personal Access Token");
-      process.env.GITHUB_TOKEN = req.body.token;
-      toastInfo(st, "GITHUB_TOKEN saved to keyring");
-    } catch (e: any) { toastError(st, `keyring: ${e.message}`); }
+      await vault.set(GH_TOKEN_NAME, token, "GitHub Personal Access Token");
+      process.env.GITHUB_TOKEN = token;
+      saveBackupTokenFile(token);
+      toastInfo(st, "GITHUB_TOKEN saved");
+    } catch (e: any) { toastError(st, `save token: ${e.message}`); }
     res.send("ok");
   });
 
@@ -171,6 +175,88 @@ export function settingsRouter(st: AppState): Router {
     } catch (e: any) {
       res.send(`<span style="color:var(--danger);font-size:var(--font-xs);font-weight:500">\u2717 ${esc(e.message)}</span>`);
     }
+  });
+
+  // ─── Remote repo management ────────────────────────────────────────────────
+
+  router.get("/settings/remote", async (req, res) => {
+    const cfg = loadBackupConfig();
+    if (!cfg.github_repo) {
+      return res.send(page("Remote Repo", "/settings", `
+        ${pageHeader("Remote Repo Management", "", "")}
+        <div class="content-padding wide-content">
+          <div class="empty-state">
+            <div class="empty-state-title">No GitHub repo configured</div>
+            <div class="empty-state-sub">Configure a backup repo in <a href="/settings" style="color:var(--accent)">Settings</a> first.</div>
+          </div>
+        </div>
+      `));
+    }
+    const subtitle = "Manage contents of " + (cfg.github_repo || "");
+    const actions = '<form hx-post="/settings/remote/sync" hx-swap="none">' + btnPrimary("Sync from remote") + "</form>";
+    res.send(page("Remote Repo", "/settings",
+      pageHeader("Remote Repo Management", subtitle, actions) +
+      '<div class="content-padding wide-content">' +
+        '<div id="remote-items" data-resource="remote"' +
+        ' hx-get="/settings/remote/fragment" hx-trigger="refresh from:body, load" hx-swap="innerHTML">' +
+        '<span class="meta">Loading...</span>' +
+        '</div></div>'
+    ));
+  });
+
+  router.get("/settings/remote/fragment", (req, res) => {
+    try {
+      const items = listRemoteContents();
+      res.send(renderRemoteItems(items));
+    } catch (e: any) {
+      res.send(`<div class="empty-state">
+        <div class="empty-state-title">Could not load remote contents</div>
+        <div class="empty-state-sub">${esc(e.message)}. Click "Sync from remote" to fetch latest data.</div>
+      </div>`);
+    }
+  });
+
+  router.post("/settings/remote/sync", async (req, res) => {
+    const id = await st.nextTaskId();
+    taskStarted(st, id, "Syncing remote repo...");
+    try {
+      syncRemoteToLocal();
+      taskFinished(st, id, true, "Remote contents synced");
+      invalidate(st, "remote");
+    } catch (e: any) { taskFinished(st, id, false, `Sync failed: ${e.message}`); }
+    res.send("ok");
+  });
+
+  router.post("/settings/remote/delete", async (req, res) => {
+    const id = await st.nextTaskId();
+    taskStarted(st, id, "Deleting selected items...");
+    try {
+      const rawItems = req.body.items;
+      if (!rawItems) throw new Error("No items selected");
+      const parsed: { type: string; id: string }[] = (Array.isArray(rawItems) ? rawItems : [rawItems]).map((s: string) => JSON.parse(s));
+      if (parsed.length === 0) throw new Error("No items selected");
+      const result = deleteRemoteItems(parsed);
+      pushRemoteChanges(`aiem: removed ${parsed.length} item(s)`);
+      taskFinished(st, id, true, `Deleted ${result.deleted} item(s) and pushed to remote`);
+      invalidate(st, "remote");
+    } catch (e: any) { taskFinished(st, id, false, `Delete failed: ${e.message}`); }
+    res.send("ok");
+  });
+
+  router.post("/settings/remote/delete-one", async (req, res) => {
+    const id = await st.nextTaskId();
+    const itemType = req.body.type;
+    const itemId = req.body.id;
+    const itemName = req.body.name || itemId;
+    taskStarted(st, id, `Deleting ${itemName}...`);
+    try {
+      if (!itemType || !itemId) throw new Error("Missing type or id");
+      deleteRemoteItems([{ type: itemType, id: itemId }]);
+      pushRemoteChanges(`aiem: removed ${itemName}`);
+      taskFinished(st, id, true, `Deleted "${itemName}" from remote`);
+      invalidate(st, "remote");
+    } catch (e: any) { taskFinished(st, id, false, `Delete failed: ${e.message}`); }
+    res.send("ok");
   });
 
   router.get("/settings/trash", (req, res) => {
@@ -352,6 +438,22 @@ function hostInfoCard(aiemHome: string): string {
   </div>`;
 }
 
+function remoteRepoCard(hasRepo: boolean): string {
+  return `<div class="settings-card settings-card-compact">
+    <div class="settings-card-header">
+      <div class="settings-card-icon">&#x1F310;</div>
+      <div>
+        <div class="settings-card-title">Remote Repo Management</div>
+        <div class="settings-card-desc">View and delete skills/MCPs from your GitHub backup repo</div>
+      </div>
+      <div class="settings-card-badge">${hasRepo ? tag("configured", "success") : tag("not set", "neutral")}</div>
+    </div>
+    <div class="settings-card-body">
+      <a href="/settings/remote" class="btn-primary" style="text-decoration:none">${hasRepo ? "Manage remote" : "Configure repo first"}</a>
+    </div>
+  </div>`;
+}
+
 function trashCard(): string {
   return `<div class="settings-card settings-card-compact">
     <div class="settings-card-header">
@@ -378,4 +480,95 @@ function aboutCard(): string {
       <div class="settings-card-badge"><span class="mono" style="font-size:var(--font-sm);font-weight:600">${VERSION}</span></div>
     </div>
   </div>`;
+}
+
+function renderRemoteItems(items: RemoteItem[]): string {
+  if (items.length === 0) {
+    return `<div class="empty-state">
+      <div class="empty-state-title">Remote repo is empty</div>
+      <div class="empty-state-sub">Push your skills and MCPs first, or click "Sync from remote" to refresh.</div>
+    </div>`;
+  }
+
+  const skills = items.filter(i => i.type === "skill");
+  const mcps = items.filter(i => i.type === "mcp");
+  const bundles = items.filter(i => i.type === "mcp_bundle");
+
+  let html = `<form hx-post="/settings/remote/delete" hx-swap="none" hx-confirm="Delete selected items from remote repo? This cannot be undone.">`;
+
+  if (skills.length > 0) {
+    html += `<div class="group-panel" style="margin-bottom:16px">
+      <div class="group-panel-title">Skills (${skills.length})</div>
+      <table class="aiem"><thead><tr><th style="width:32px"></th><th>Name</th><th>ID</th><th>Description</th><th style="text-align:right">Actions</th></tr></thead><tbody>`;
+    for (const s of skills) {
+      const encoded = esc(JSON.stringify({ type: s.type, id: s.id }));
+      html += `<tr>
+        <td><input type="checkbox" name="items" value="${encoded}"></td>
+        <td style="font-weight:500">${esc(s.name)}</td>
+        <td class="mono meta" style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(s.id)}</td>
+        <td class="meta" style="max-width:250px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(s.description || "")}</td>
+        <td style="text-align:right">
+          <form hx-post="/settings/remote/delete-one" hx-swap="none" hx-confirm="Delete skill '${esc(s.name)}' from remote?" style="display:inline">
+            <input type="hidden" name="type" value="skill">
+            <input type="hidden" name="id" value="${esc(s.id)}">
+            <input type="hidden" name="name" value="${esc(s.name)}">
+            ${btnDanger("Delete")}
+          </form>
+        </td>
+      </tr>`;
+    }
+    html += `</tbody></table></div>`;
+  }
+
+  if (mcps.length > 0) {
+    html += `<div class="group-panel" style="margin-bottom:16px">
+      <div class="group-panel-title">MCP Servers (${mcps.length})</div>
+      <table class="aiem"><thead><tr><th style="width:32px"></th><th>Name</th><th>Description</th><th style="text-align:right">Actions</th></tr></thead><tbody>`;
+    for (const s of mcps) {
+      const encoded = esc(JSON.stringify({ type: s.type, id: s.id }));
+      html += `<tr>
+        <td><input type="checkbox" name="items" value="${encoded}"></td>
+        <td style="font-weight:500">${esc(s.name)}</td>
+        <td class="meta">${esc(s.description || "")}</td>
+        <td style="text-align:right">
+          <form hx-post="/settings/remote/delete-one" hx-swap="none" hx-confirm="Delete MCP '${esc(s.name)}' from remote?" style="display:inline">
+            <input type="hidden" name="type" value="mcp">
+            <input type="hidden" name="id" value="${esc(s.id)}">
+            <input type="hidden" name="name" value="${esc(s.name)}">
+            ${btnDanger("Delete")}
+          </form>
+        </td>
+      </tr>`;
+    }
+    html += `</tbody></table></div>`;
+  }
+
+  if (bundles.length > 0) {
+    html += `<div class="group-panel" style="margin-bottom:16px">
+      <div class="group-panel-title">MCP Bundles (${bundles.length})</div>
+      <table class="aiem"><thead><tr><th style="width:32px"></th><th>Name</th><th style="text-align:right">Actions</th></tr></thead><tbody>`;
+    for (const s of bundles) {
+      const encoded = esc(JSON.stringify({ type: s.type, id: s.id }));
+      html += `<tr>
+        <td><input type="checkbox" name="items" value="${encoded}"></td>
+        <td class="mono">${esc(s.name)}</td>
+        <td style="text-align:right">
+          <form hx-post="/settings/remote/delete-one" hx-swap="none" hx-confirm="Delete bundle '${esc(s.name)}' from remote?" style="display:inline">
+            <input type="hidden" name="type" value="mcp_bundle">
+            <input type="hidden" name="id" value="${esc(s.id)}">
+            <input type="hidden" name="name" value="${esc(s.name)}">
+            ${btnDanger("Delete")}
+          </form>
+        </td>
+      </tr>`;
+    }
+    html += `</tbody></table></div>`;
+  }
+
+  html += `<div style="display:flex;gap:8px;align-items:center;padding:8px 0">
+    ${btnDanger("Delete selected")}
+    <span class="meta">Select items above and click to remove from the remote repository</span>
+  </div></form>`;
+
+  return html;
 }
