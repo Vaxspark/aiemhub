@@ -495,7 +495,6 @@ const JS = `
     if(clickedBtn&&clickedBtn.type==='button'&&!clickedBtn.getAttribute('hx-post')&&!clickedBtn.getAttribute('hx-get'))return;
     const elt=target.closest('[hx-post],[hx-get]');
     if(!elt||elt.matches('form'))return;
-    if(elt.closest('form[hx-post],form[hx-get]')&&((elt.tagName||'').toLowerCase()==='button'||(elt.type||'').toLowerCase()==='submit'))return;
     var htTrigger=elt.getAttribute('hx-trigger')||'';
     if(htTrigger&&htTrigger.indexOf('click')<0&&htTrigger.indexOf('submit')<0)return;
     const confirmText=elt.getAttribute('hx-confirm');
