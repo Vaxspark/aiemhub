@@ -422,8 +422,8 @@ const JS = `
   }
   function bodyFor(elt,submitter){
     const params=new URLSearchParams();
-    const form=elt&&elt.matches&&elt.matches('form')?elt:(elt&&elt.closest?elt.closest('form'):null);
-    if(form)addControls(params,form);
+    var isForm=elt&&elt.matches&&elt.matches('form');
+    if(isForm)addControls(params,elt);
     includeRoots(elt).forEach(root=>addControls(params,root));
     if(submitter&&submitter.name)addControl(params,submitter);
     return params.toString();

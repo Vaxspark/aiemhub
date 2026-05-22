@@ -358,11 +358,11 @@ function backupCard(cfg: BackupConfig, lastBackup: string): string {
     <div class="settings-card-body">
       <div class="settings-section">
         <div class="settings-section-label">Auto-backup interval</div>
-        <form hx-post="/settings/backup/interval" hx-swap="none" hx-on--after-request="if(event.detail.xhr.status>=200&&event.detail.xhr.status<300){location.reload()}" style="display:flex;gap:6px">
+        <form hx-post="/settings/backup/interval" hx-swap="none" style="display:flex;gap:6px">
           ${(["never", "daily", "weekly"] as const).map((val) => {
             const label = val.charAt(0).toUpperCase() + val.slice(1);
             const selected = cfg.auto_interval === val;
-            return `<button type="submit" name="interval" value="${val}" class="${selected ? "btn-primary" : "btn-ghost"}" style="font-size:var(--font-xs);padding:4px 12px">${label}</button>`;
+            return `<button type="submit" name="interval" value="${val}" class="${selected ? "btn-primary" : "btn-ghost"}" style="font-size:var(--font-xs);padding:4px 12px" onclick="this.parentElement.querySelectorAll('button').forEach(function(b){b.className=b.className.replace('btn-primary','btn-ghost')});this.className=this.className.replace('btn-ghost','btn-primary')">${label}</button>`;
           }).join("")}
         </form>
       </div>
