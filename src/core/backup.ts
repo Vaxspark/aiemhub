@@ -198,12 +198,28 @@ export function exportSkillsAndMcpToDir(dest: string): string[] {
   fs.mkdirSync(dest, { recursive: true });
   const exported: string[] = [];
 
-  for (const [rel, archiveName] of SKILLS_MCP_FILES) {
-    const src = path.join(paths.home(), rel);
-    if (fs.existsSync(src)) {
-      fs.copyFileSync(src, path.join(dest, archiveName));
-      exported.push(archiveName);
+  // Skills index: strip deployments, file_hashes, and machine-specific paths
+  const skillsSrc = path.join(paths.home(), "skills/index.json");
+  if (fs.existsSync(skillsSrc)) {
+    const raw = readJsonFile<any>(skillsSrc, { skills: {} });
+    const cleaned: any = { skills: {} };
+    for (const [id, skill] of Object.entries<any>(raw.skills || {})) {
+      cleaned.skills[id] = {
+        id: skill.id, name: skill.name, source: skill.source,
+        version: skill.version, description: skill.description,
+        installed_at: skill.installed_at,
+        path: "", deployments: {}, file_hashes: {},
+      };
     }
+    writeJsonFile(path.join(dest, "skills_index.json"), cleaned);
+    exported.push("skills_index.json");
+  }
+
+  // MCP servers: copy as-is (no machine-specific data)
+  const mcpSrc = path.join(paths.home(), "mcp/servers.json");
+  if (fs.existsSync(mcpSrc)) {
+    fs.copyFileSync(mcpSrc, path.join(dest, "mcp_servers.json"));
+    exported.push("mcp_servers.json");
   }
 
   const bundlesDir = paths.mcpBundlesDir();
@@ -360,7 +376,70 @@ export function pullGithub(repoUrl: string, token?: string): void {
 
   try { snapshotLocal(); } catch {}
 
-  importFromDir(workDir);
+  importSkillsAndMcpOnly(workDir);
+}
+
+function importSkillsAndMcpOnly(src: string): void {
+  // Import skills index: merge with local, preserve local deployments
+  const remoteSkillsIdx = path.join(src, "skills_index.json");
+  if (fs.existsSync(remoteSkillsIdx)) {
+    const remoteRaw = readJsonFile<any>(remoteSkillsIdx, { skills: {} });
+    const localIndexPath = paths.skillsIndexFile();
+    const localRaw = fs.existsSync(localIndexPath) ? readJsonFile<any>(localIndexPath, { skills: {} }) : { skills: {} };
+    const remoteSkills = remoteRaw.skills || {};
+    const localSkills = localRaw.skills || {};
+
+    for (const [id, rSkill] of Object.entries<any>(remoteSkills)) {
+      const localDir = path.join(paths.skillsDir(), id);
+      const existing = localSkills[id];
+      localSkills[id] = {
+        ...rSkill,
+        path: localDir,
+        deployments: existing?.deployments || {},
+        file_hashes: existing?.file_hashes || {},
+      };
+      if (rSkill.source?.type === "local" || rSkill.source?.type === "Local") {
+        localSkills[id].source = { ...rSkill.source, path: localDir };
+      }
+    }
+
+    localRaw.skills = localSkills;
+    fs.mkdirSync(path.dirname(localIndexPath), { recursive: true });
+    writeJsonFile(localIndexPath, localRaw);
+  }
+
+  // Import MCP servers.json
+  const remoteMcp = path.join(src, "mcp_servers.json");
+  if (fs.existsSync(remoteMcp)) {
+    const dest = path.join(paths.home(), "mcp/servers.json");
+    fs.mkdirSync(path.dirname(dest), { recursive: true });
+    fs.copyFileSync(remoteMcp, dest);
+  }
+
+  // Import MCP bundles
+  const bundlesSrc = path.join(src, "mcp_bundles");
+  if (fs.existsSync(bundlesSrc) && fs.statSync(bundlesSrc).isDirectory()) {
+    const bundlesDest = paths.mcpBundlesDir();
+    fs.mkdirSync(bundlesDest, { recursive: true });
+    for (const entry of fs.readdirSync(bundlesSrc, { withFileTypes: true })) {
+      if (!entry.isDirectory()) continue;
+      const dst = path.join(bundlesDest, entry.name);
+      if (fs.existsSync(dst)) removePath(dst);
+      copyDirAll(path.join(bundlesSrc, entry.name), dst);
+    }
+  }
+
+  // Import skill content directories
+  for (const dirName of ["skill_contents", "custom_skills"]) {
+    const skillsSrc = path.join(src, dirName);
+    if (!fs.existsSync(skillsSrc) || !fs.statSync(skillsSrc).isDirectory()) continue;
+    for (const entry of fs.readdirSync(skillsSrc, { withFileTypes: true })) {
+      if (!entry.isDirectory()) continue;
+      const dst = path.join(paths.skillsDir(), entry.name);
+      if (fs.existsSync(dst)) removePath(dst);
+      copyDirAll(path.join(skillsSrc, entry.name), dst);
+    }
+  }
 }
 
 // ─── Remote repo management ──────────────────────────────────────────────────
