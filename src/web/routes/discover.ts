@@ -102,7 +102,11 @@ export function discoverRouter(st: AppState): Router {
 
       toastInfo(st, `installed ${installed} skill(s), imported ${importedMcp} MCP server(s) from local scan`);
       invalidate(st, "skills");
-    } catch (e: any) { toastError(st, e.message); }
+    } catch (e: any) {
+      toastError(st, e.message);
+      res.status(400).send(e.message);
+      return;
+    }
     res.send("ok");
   });
 

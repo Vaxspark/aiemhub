@@ -408,6 +408,14 @@ const JS = `
     if(root.matches&&root.matches('input,select,textarea,button'))addControl(params,root);
     root.querySelectorAll&&root.querySelectorAll('input,select,textarea').forEach(el=>addControl(params,el));
   }
+  function addAssociatedControls(params,form){
+    if(!form||!form.id)return;
+    const escaped=window.CSS&&CSS.escape?CSS.escape(form.id):form.id.replace(/"/g,'\\"');
+    document.querySelectorAll('[form="'+escaped+'"]').forEach(el=>{
+      if(form.contains(el))return;
+      if(el.matches&&el.matches('input,select,textarea,button'))addControl(params,el);
+    });
+  }
   function includeRoots(elt){
     const spec=elt.getAttribute('hx-include');
     if(!spec)return [];
@@ -423,7 +431,7 @@ const JS = `
   function bodyFor(elt,submitter){
     const params=new URLSearchParams();
     var isForm=elt&&elt.matches&&elt.matches('form');
-    if(isForm)addControls(params,elt);
+    if(isForm){addControls(params,elt);addAssociatedControls(params,elt);}
     includeRoots(elt).forEach(root=>addControls(params,root));
     if(submitter&&submitter.name)addControl(params,submitter);
     return params.toString();

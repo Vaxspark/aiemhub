@@ -120,12 +120,12 @@ function runGit(args: string[], cwd: string): void {
     env.http_proxy = proxy;
   }
   try {
-    execFileSync("git", ["-c", "credential.helper=", ...args], { cwd, env, stdio: ["ignore", "pipe", "pipe"], timeout: 180_000 });
+    execFileSync("git", ["-c", "credential.helper=", ...args], { cwd, env, stdio: ["ignore", "pipe", "pipe"], timeout: 180_000, windowsHide: true });
   } catch (e: any) {
     const first = gitErrorText(e);
     if (/schannel|AcquireCredentialsHandle|SEC_E_NO_CREDENTIALS/i.test(first)) {
       try {
-        execFileSync("git", ["-c", "credential.helper=", "-c", "http.sslBackend=openssl", ...args], { cwd, env, stdio: ["ignore", "pipe", "pipe"], timeout: 180_000 });
+        execFileSync("git", ["-c", "credential.helper=", "-c", "http.sslBackend=openssl", ...args], { cwd, env, stdio: ["ignore", "pipe", "pipe"], timeout: 180_000, windowsHide: true });
         return;
       } catch (retry: any) {
         throw new Error(redactSecrets(`${first}; openssl retry: ${gitErrorText(retry)}`));

@@ -1,9 +1,12 @@
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
-import { execSync } from "child_process";
-import { readJsonFile, writeJsonFile, removePath } from "./fs-util.js";
+import { execFileSync } from "child_process";
+import { readJsonFile, writeJsonFile, removePath, hashDir } from "./fs-util.js";
 import * as paths from "./paths.js";
+import { SkillRegistry, deploySkill } from "./skills.js";
+import { McpRegistry, deployToProject } from "./mcp.js";
+import { ProjectStore } from "./projects.js";
 
 export type AutoInterval = "never" | "daily" | "weekly";
 
@@ -263,7 +266,7 @@ function cleanWorkDirForPush(workDir: string): void {
 function gitRun(dir: string, args: string[], proxy?: string): string {
   const env: Record<string, string> = { ...process.env as any };
   if (proxy) { env.HTTPS_PROXY = proxy; env.HTTP_PROXY = proxy; env.https_proxy = proxy; env.http_proxy = proxy; }
-  return execSync(`git ${args.map(a => `"${a}"`).join(" ")}`, { cwd: dir, env, encoding: "utf-8", timeout: 120_000, stdio: ["pipe", "pipe", "pipe"] });
+  return execFileSync("git", args, { cwd: dir, env, encoding: "utf-8", timeout: 120_000, stdio: ["pipe", "pipe", "pipe"], windowsHide: true });
 }
 
 function buildAuthUrl(repoUrl: string, token?: string): string {
@@ -380,7 +383,10 @@ export function pullGithub(repoUrl: string, token?: string): void {
 }
 
 function importSkillsAndMcpOnly(src: string): void {
-  // Import skills index: merge with local, preserve local deployments
+  const touchedSkillIds = new Set<string>();
+  const touchedMcpNames = new Set<string>();
+
+  // Import skills index: merge remote entries into local and preserve local-only skills/deployments.
   const remoteSkillsIdx = path.join(src, "skills_index.json");
   if (fs.existsSync(remoteSkillsIdx)) {
     const remoteRaw = readJsonFile<any>(remoteSkillsIdx, { skills: {} });
@@ -393,6 +399,7 @@ function importSkillsAndMcpOnly(src: string): void {
       const localDir = path.join(paths.skillsDir(), id);
       const existing = localSkills[id];
       localSkills[id] = {
+        ...existing,
         ...rSkill,
         path: localDir,
         deployments: existing?.deployments || {},
@@ -408,12 +415,20 @@ function importSkillsAndMcpOnly(src: string): void {
     writeJsonFile(localIndexPath, localRaw);
   }
 
-  // Import MCP servers.json
+  // Import MCP servers.json by upserting remote entries without deleting local-only servers.
   const remoteMcp = path.join(src, "mcp_servers.json");
   if (fs.existsSync(remoteMcp)) {
+    const remoteRaw = readJsonFile<any>(remoteMcp, { servers: {} });
     const dest = path.join(paths.home(), "mcp/servers.json");
+    const localRaw = fs.existsSync(dest) ? readJsonFile<any>(dest, { servers: {} }) : { servers: {} };
+    const localServers = localRaw.servers || {};
+    for (const [name, server] of Object.entries<any>(remoteRaw.servers || {})) {
+      localServers[name] = server;
+      touchedMcpNames.add(name);
+    }
+    localRaw.servers = localServers;
     fs.mkdirSync(path.dirname(dest), { recursive: true });
-    fs.copyFileSync(remoteMcp, dest);
+    writeJsonFile(dest, localRaw);
   }
 
   // Import MCP bundles
@@ -438,6 +453,81 @@ function importSkillsAndMcpOnly(src: string): void {
       const dst = path.join(paths.skillsDir(), entry.name);
       if (fs.existsSync(dst)) removePath(dst);
       copyDirAll(path.join(skillsSrc, entry.name), dst);
+      touchedSkillIds.add(entry.name);
+    }
+  }
+
+  refreshPulledSkillRecords(touchedSkillIds);
+  redeployPulledSkills(touchedSkillIds);
+  redeployPulledMcp(touchedMcpNames);
+}
+
+function refreshPulledSkillRecords(skillIds: Set<string>): void {
+  if (skillIds.size === 0) return;
+  const reg = SkillRegistry.load();
+  let changed = false;
+  for (const id of skillIds) {
+    const skill = reg.get(id);
+    if (!skill) continue;
+    const localDir = path.join(paths.skillsDir(), id);
+    if (!fs.existsSync(localDir)) continue;
+    skill.path = localDir;
+    skill.file_hashes = hashDir(localDir);
+    const sourceType = (skill.source as any)?.type;
+    if (sourceType === "local" || sourceType === "Local") {
+      skill.source = { ...(skill.source as any), path: localDir } as any;
+    }
+    reg.upsert(skill);
+    changed = true;
+  }
+  if (changed) reg.save();
+}
+
+function redeployPulledSkills(skillIds: Set<string>): void {
+  if (skillIds.size === 0) return;
+  const reg = SkillRegistry.load();
+  let projects: ReturnType<ProjectStore["list"]> = [];
+  try { projects = ProjectStore.load().list(); } catch {}
+
+  for (const id of skillIds) {
+    const skill = reg.get(id);
+    if (!skill) continue;
+    const targets = new Map<string, Set<string>>();
+
+    for (const [ideId, roots] of Object.entries(skill.deployments || {})) {
+      for (const root of roots) {
+        if (!targets.has(ideId)) targets.set(ideId, new Set());
+        targets.get(ideId)!.add(root);
+      }
+    }
+
+    for (const project of projects) {
+      if (!project.skills.includes(id)) continue;
+      for (const ideId of project.ides) {
+        if (!targets.has(ideId)) targets.set(ideId, new Set());
+        targets.get(ideId)!.add(project.path);
+      }
+    }
+
+    for (const [ideId, roots] of targets) {
+      for (const root of roots) {
+        deploySkill(skill, ideId, root === "~" ? undefined : root);
+      }
+    }
+    reg.upsert(skill);
+  }
+  reg.save();
+}
+
+function redeployPulledMcp(names: Set<string>): void {
+  if (names.size === 0) return;
+  try { McpRegistry.load().save(); } catch {}
+  let projects: ReturnType<ProjectStore["list"]> = [];
+  try { projects = ProjectStore.load().list(); } catch { return; }
+  for (const name of names) {
+    for (const project of projects) {
+      if (!project.mcp_servers.includes(name)) continue;
+      deployToProject(name, project.path, project.ides);
     }
   }
 }
